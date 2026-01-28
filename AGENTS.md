@@ -34,9 +34,6 @@ Runs the full quality check suite:
 - `cargo fmt -- --check` - Check code formatting
 - `cargo clippy -- -D warnings` - Lint with all warnings as errors
 - `cargo check --all` - Type checking
-- `cargo machete` - Find unused dependencies
-- `cargo audit` - Security audit
-- `cargo test` - Run test suite
 
 ### Auto-fix Quality Issues
 ```bash
@@ -45,19 +42,19 @@ just quality-format
 Automatically fixes formatting and some linting issues:
 - `cargo fmt` - Auto-format code
 - `cargo clippy --fix` - Auto-fix clippy warnings
-- `cargo audit fix` - Fix security issues
+
+### Test
+```bash
+just test
+```
+Runs the test suite:
+- `cargo test` - Run test suite
 
 ### Build & Run
 ```bash
 cargo build              # Debug build
 cargo run -- <args>      # Run with arguments
 cargo build --release    # Release build
-```
-
-### Testing
-```bash
-cargo test                    # Run all tests
-cargo test <test_name>        # Run specific test
 ```
 
 ### Changelog Management
