@@ -3,6 +3,8 @@ use std::{fs, path::PathBuf};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
+use crate::config::profiles_dir;
+
 #[derive(Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
@@ -25,16 +27,8 @@ pub fn ensure_default_profile() -> Result<(), String> {
     Ok(())
 }
 
-fn get_profiles_dir() -> PathBuf {
-    let mut dir = dirs::config_dir().expect("Cannot find config directory");
-    dir.push("blazinit");
-    dir.push(PROFILE_DIRNAME);
-    fs::create_dir_all(&dir).expect("Failed to create profiles directory");
-    dir
-}
-
 fn profile_path(profile_name: &str) -> PathBuf {
-    let mut path = get_profiles_dir();
+    let mut path = profiles_dir();
     path.push(format!("{}.toml", profile_name));
     path
 }
@@ -76,7 +70,7 @@ pub fn delete_profile(profile_name: &str) -> Result<(), String> {
 }
 
 pub fn list_profiles() {
-    let path = get_profiles_dir();
+    let path = profiles_dir();
 
     let entries = match fs::read_dir(&path) {
         Ok(entries) => entries,
@@ -92,12 +86,12 @@ pub fn list_profiles() {
         if let Ok(entry) = entry
             && let Some(name) =
                 entry.path().file_stem().and_then(|s| s.to_str())
-            {
-                if name == DEFAULT_PROFILE {
-                    println!("{} (default)", name.green());
-                } else {
-                    println!("{}", name);
-                }
+        {
+            if name == DEFAULT_PROFILE {
+                println!("{} (default)", name.green());
+            } else {
+                println!("{}", name);
             }
+        }
     }
 }
