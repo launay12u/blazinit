@@ -39,18 +39,18 @@ pub enum Commands {
 
     #[command(about = "Add a software dependency to a profile")]
     Add {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
         #[arg(help = "Software identifier to add")]
         software: String,
+        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        profile: String,
     },
 
     #[command(about = "Remove a software dependency from a profile")]
     Remove {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
         #[arg(help = "Software identifier to remove")]
         software: String,
+        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        profile: String,
     },
 
     #[command(about = "List available software packages")]

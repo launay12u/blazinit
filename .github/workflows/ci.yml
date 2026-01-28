@@ -9,8 +9,8 @@ on:
       - main
 
 jobs:
-  quality-check:
-    name: Quality Check
+  ci:
+    name: CI
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -27,3 +27,6 @@ jobs:
 
       - name: Run quality check
         run: just quality-check
+      
+      - name: Run tests
+        run: just test

@@ -6,8 +6,9 @@ quality-check:
 quality-format:
     cargo fmt
     cargo clippy --fix -Z unstable-options --allow-dirty
-    cargo audit fix 
 
+test:
+    cargo test
 
 default_bump := "minor"
 
