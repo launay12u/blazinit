@@ -1,0 +1,19 @@
+version = "1.2"
+
+[software.git]
+display = "Git"
+packages.apt = "git"
+packages.brew = "git"
+detect = "git --version"
+
+[software.vscode]
+display = "Visual Studio Code"
+packages.apt = "code"
+packages.brew = "visual-studio-code"
+detect = "code --version"
+
+[software.docker]
+display = "Docker"
+packages.apt = "docker.io"
+packages.brew = "docker"
+detect = "docker --version"
