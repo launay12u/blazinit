@@ -4,7 +4,7 @@ use crate::profile;
 
 #[derive(Parser)]
 #[command(name = "blazinit")]
-#[command(version = "0.1")]
+#[command(version)]
 #[command(
     about = "CLI tool to manage software profiles and install all software in one command",
     long_about = "Blazinit allows you to create, modify, export/import, and install software profiles. A profile is a list of software identifiers, and you can perform operations on the whole profile at once."
