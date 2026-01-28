@@ -62,8 +62,7 @@ cargo test <test_name>        # Run specific test
 
 ### Changelog Management
 ```bash
-just generate-changelog    # Generate changelog with git-cliff
-just bump-version         # Bump version and update changelog
+just bump <major|minor|patch>         # Bump version and update changelog
 ```
 
 ## Code Style
