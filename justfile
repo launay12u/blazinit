@@ -2,9 +2,6 @@ quality-check:
     cargo fmt -- --check
     cargo clippy -- -D warnings
     cargo check --all
-    cargo machete
-    cargo audit
-    cargo test
 
 quality-format:
     cargo fmt

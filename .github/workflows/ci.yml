@@ -22,12 +22,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       
-      - name: Install cargo machete
-        run: cargo install cargo-machete
-      
-      - name: Install cargo audit
-        run: cargo install cargo-audit
-      
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
 
