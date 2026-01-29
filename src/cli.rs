@@ -18,6 +18,11 @@ pub enum Commands {
     Create {
         #[arg(help = "Name of the profile to create")]
         profile: String,
+        #[arg(
+            long,
+            help = "Set this profile as the default profile after creation"
+        )]
+        default: bool,
     },
 
     #[command(about = "Delete an existing profile")]

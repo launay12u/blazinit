@@ -631,7 +631,12 @@ mod tests {
         // First attempt should fail
         let result = add_package_to_profile(profile_name, "docker");
         assert!(result.is_err());
-        assert!(result.err().unwrap().contains("is already present in profile"));
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .contains("is already present in profile")
+        );
 
         // Verify the profile still has only one package
         let updated_profile = read_profile(profile_name).unwrap();

@@ -122,7 +122,123 @@ name = "git"
         .arg("test-profile")
         .assert()
         .failure()
+        .stderr(predicate::str::contains("is already present in profile"));
+}
+
+#[test]
+fn test_create_profile_with_default_flag() {
+    let temp_dir = setup_test_env();
+
+    // Create a new profile with --default flag
+    blazinit_cmd(&temp_dir)
+        .arg("create")
+        .arg("my-default")
+        .arg("--default")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Successfully created profile 'my-default'",
+        ))
+        .stdout(predicate::str::contains(
+            "Default profile set to 'my-default'",
+        ));
+
+    // Verify it's now the default
+    blazinit_cmd(&temp_dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("my-default (default)"));
+}
+
+#[test]
+fn test_set_default_on_non_existent_profile() {
+    let temp_dir = setup_test_env();
+
+    blazinit_cmd(&temp_dir)
+        .arg("set-default")
+        .arg("non-existent")
+        .assert()
+        .failure()
         .stderr(predicate::str::contains(
-            "is already present in profile",
+            "Profile 'non-existent' does not exist",
+        ));
+}
+
+#[test]
+fn test_create_duplicate_profile_fails() {
+    let temp_dir = setup_test_env();
+
+    // Create profile
+    blazinit_cmd(&temp_dir)
+        .arg("create")
+        .arg("duplicate")
+        .assert()
+        .success();
+
+    // Try to create again
+    blazinit_cmd(&temp_dir)
+        .arg("create")
+        .arg("duplicate")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Profile 'duplicate' already exists",
+        ));
+}
+
+#[test]
+fn test_delete_non_existent_profile_fails() {
+    let temp_dir = setup_test_env();
+
+    blazinit_cmd(&temp_dir)
+        .arg("delete")
+        .arg("non-existent")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Profile 'non-existent' does not exist",
+        ));
+}
+
+#[test]
+fn test_show_non_existent_profile_fails() {
+    let temp_dir = setup_test_env();
+
+    blazinit_cmd(&temp_dir)
+        .arg("show")
+        .arg("non-existent")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
+fn test_remove_from_non_existent_profile_fails() {
+    let temp_dir = setup_test_env();
+
+    blazinit_cmd(&temp_dir)
+        .arg("remove")
+        .arg("some-package")
+        .arg("non-existent")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Profile 'non-existent' does not exist",
+        ));
+}
+
+#[test]
+fn test_add_to_non_existent_profile_fails() {
+    let temp_dir = setup_test_env();
+
+    blazinit_cmd(&temp_dir)
+        .arg("add")
+        .arg("some-package")
+        .arg("non-existent")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Profile 'non-existent' does not exist",
         ));
 }
