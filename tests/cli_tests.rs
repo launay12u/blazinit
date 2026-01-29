@@ -122,7 +122,31 @@ name = "git"
         .arg("test-profile")
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "is already present in profile",
+        .stderr(predicate::str::contains("is already present in profile"));
+}
+
+#[test]
+fn test_create_profile_with_default_flag() {
+    let temp_dir = setup_test_env();
+
+    // Create a new profile with --default flag
+    blazinit_cmd(&temp_dir)
+        .arg("create")
+        .arg("my-default")
+        .arg("--default")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Successfully created profile 'my-default'",
+        ))
+        .stdout(predicate::str::contains(
+            "Default profile set to 'my-default'",
         ));
+
+    // Verify it's now the default
+    blazinit_cmd(&temp_dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("my-default (default)"));
 }

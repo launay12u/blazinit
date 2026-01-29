@@ -13,7 +13,12 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     config::bootstrap_config()?;
 
     match &cli.command {
-        cli::Commands::Create { profile } => profile::create_profile(profile)?,
+        cli::Commands::Create { profile, default } => {
+            profile::create_profile(profile)?;
+            if *default {
+                config::set_default_profile(profile)?;
+            }
+        }
 
         cli::Commands::Delete { profile } => profile::delete_profile(profile)?,
 
