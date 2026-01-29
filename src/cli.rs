@@ -1,7 +1,5 @@
 use clap::{Parser, Subcommand};
 
-use crate::profile;
-
 #[derive(Parser)]
 #[command(name = "blazinit")]
 #[command(version)]
@@ -30,8 +28,10 @@ pub enum Commands {
 
     #[command(about = "List all packages in a profile")]
     Show {
-        #[arg(help = "Profile name to add packages to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(
+            help = "Profile name to show. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
     },
 
     #[command(about = "List all saved profiles")]
@@ -41,25 +41,34 @@ pub enum Commands {
     Add {
         #[arg(help = "Package identifier to add")]
         package: String,
-        #[arg(help = "Profile name to add package to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(
+            help = "Profile name to add package to. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
     },
 
     #[command(about = "Remove a package dependency from a profile")]
     Remove {
         #[arg(help = "Package identifier to remove")]
         package: String,
-        #[arg(help = "Profile name to remove package from", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(
+            help = "Profile name to remove package from. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
     },
 
     #[command(about = "List available software packages")]
-    ListPackages,
+    ListPackages {
+        #[arg(help = "Optional search query to filter packages")]
+        query: Option<String>,
+    },
 
     #[command(about = "Export a profile to a TOML file")]
     Export {
-        #[arg(help = "Profile name to export", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(
+            help = "Profile name to export. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
         #[arg(help = "Optional file path to export to")]
         file: Option<String>,
     },
@@ -72,7 +81,15 @@ pub enum Commands {
 
     #[command(about = "Install all packages defined in a profile")]
     Install {
-        #[arg(help = "Profile name to install", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        #[arg(
+            help = "Profile name to install. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
+    },
+
+    #[command(about = "Set the default profile")]
+    SetDefault {
+        #[arg(help = "Name of the profile to set as default")]
         profile: String,
     },
 }
