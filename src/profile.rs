@@ -157,10 +157,24 @@ pub fn remove_package_from_profile(
     profile_name: &str,
     package_name: &str,
 ) -> Result<(), String> {
+    let mut profile = read_profile(profile_name)?;
+
+    let initial_len = profile.packages.len();
+    profile.packages.retain(|pkg| pkg.name != package_name);
+
+    if profile.packages.len() == initial_len {
+        return Err(format!(
+            "Package '{}' is not present in profile '{}'",
+            package_name, profile_name
+        ));
+    }
+
+    write_profile(&profile)?;
     println!(
-        "Remove package '{}' from profile '{}'",
+        "Successfully removed package '{}' from profile '{}'",
         package_name, profile_name
     );
+
     Ok(())
 }
 
@@ -468,5 +482,101 @@ mod tests {
         let result = add_package_to_profile("non-existent", "some-package");
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("does not exist"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_remove_package_success() {
+        let _temp = setup_test_env();
+        let profile_name = "test-remove";
+
+        // Create profile with a package
+        let profile = Profile {
+            name: profile_name.to_string(),
+            packages: vec![
+                ProfilePackage {
+                    name: "package1".to_string(),
+                    display: None,
+                    installers: HashMap::new(),
+                    detect: None,
+                    dependencies: vec![],
+                },
+                ProfilePackage {
+                    name: "package2".to_string(),
+                    display: None,
+                    installers: HashMap::new(),
+                    detect: None,
+                    dependencies: vec![],
+                },
+            ],
+        };
+        write_profile(&profile).unwrap();
+
+        // Remove one package
+        let result = remove_package_from_profile(profile_name, "package1");
+        assert!(result.is_ok());
+
+        // Verify package was removed
+        let updated_profile = read_profile(profile_name).unwrap();
+        assert_eq!(updated_profile.packages.len(), 1);
+        assert_eq!(updated_profile.packages[0].name, "package2");
+    }
+
+    #[test]
+    #[serial]
+    fn test_remove_package_not_present() {
+        let _temp = setup_test_env();
+        let profile_name = "test-remove-not-present";
+
+        // Create empty profile
+        create_profile(profile_name).unwrap();
+
+        // Try to remove non-existent package
+        let result = remove_package_from_profile(profile_name, "non-existent");
+        assert!(result.is_err());
+        let error_msg = result.err().unwrap();
+        assert!(error_msg.contains("is not present in profile"));
+        assert!(error_msg.contains("non-existent"));
+        assert!(error_msg.contains(profile_name));
+    }
+
+    #[test]
+    #[serial]
+    fn test_remove_package_from_non_existent_profile() {
+        let _temp = setup_test_env();
+
+        let result =
+            remove_package_from_profile("non-existent", "some-package");
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("does not exist"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_remove_package_multiple_times() {
+        let _temp = setup_test_env();
+        let profile_name = "test-remove-multiple";
+
+        // Create profile with a package
+        let profile = Profile {
+            name: profile_name.to_string(),
+            packages: vec![ProfilePackage {
+                name: "brew".to_string(),
+                display: None,
+                installers: HashMap::new(),
+                detect: None,
+                dependencies: vec![],
+            }],
+        };
+        write_profile(&profile).unwrap();
+
+        // First removal should succeed
+        let result = remove_package_from_profile(profile_name, "brew");
+        assert!(result.is_ok());
+
+        // Second removal should fail
+        let result = remove_package_from_profile(profile_name, "brew");
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("is not present in profile"));
     }
 }
