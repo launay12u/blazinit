@@ -66,12 +66,20 @@ pub fn add_package_to_profile(
 ) -> Result<(), String> {
     let mut profile = read_profile(profile_name)?;
 
+    let existing_package_names: std::collections::HashSet<_> =
+        profile.packages.iter().map(|p| p.name.clone()).collect();
+
+    // Check if the main package already exists
+    if existing_package_names.contains(package_name) {
+        return Err(format!(
+            "Package '{}' is already present in profile '{}'",
+            package_name, profile_name
+        ));
+    }
+
     let mut to_add_name_queue = vec![package_name.to_string()];
     let mut processed_names = std::collections::HashSet::new();
     let mut new_additions_details: Vec<ProfilePackage> = Vec::new();
-
-    let existing_package_names: std::collections::HashSet<_> =
-        profile.packages.iter().map(|p| p.name.clone()).collect();
 
     while let Some(current_package_name) = to_add_name_queue.pop() {
         if existing_package_names.contains(&current_package_name)
@@ -101,26 +109,19 @@ pub fn add_package_to_profile(
         }
     }
 
-    if !new_additions_details.is_empty() {
-        println!("Adding to profile '{}':", profile_name);
-        for item in &new_additions_details {
-            println!("- {}", item.name);
-            profile.packages.push(item.clone());
-        }
-
-        profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
-
-        write_profile(&profile)?;
-        println!(
-            "Successfully added {} package(s).",
-            new_additions_details.len()
-        );
-    } else {
-        println!(
-            "Package '{}' and its dependencies are already in profile '{}'.",
-            package_name, profile_name
-        );
+    println!("Adding to profile '{}':", profile_name);
+    for item in &new_additions_details {
+        println!("- {}", item.name);
+        profile.packages.push(item.clone());
     }
+
+    profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
+
+    write_profile(&profile)?;
+    println!(
+        "Successfully added {} package(s).",
+        new_additions_details.len()
+    );
 
     Ok(())
 }
@@ -578,5 +579,63 @@ mod tests {
         let result = remove_package_from_profile(profile_name, "brew");
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("is not present in profile"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_add_package_already_present() {
+        let _temp = setup_test_env();
+        let profile_name = "test-add-duplicate";
+
+        // Create profile with a package
+        let profile = Profile {
+            name: profile_name.to_string(),
+            packages: vec![ProfilePackage {
+                name: "git".to_string(),
+                display: None,
+                installers: HashMap::new(),
+                detect: None,
+                dependencies: vec![],
+            }],
+        };
+        write_profile(&profile).unwrap();
+
+        // Try to add the same package again
+        let result = add_package_to_profile(profile_name, "git");
+        assert!(result.is_err());
+        let error_msg = result.err().unwrap();
+        assert!(error_msg.contains("is already present in profile"));
+        assert!(error_msg.contains("git"));
+        assert!(error_msg.contains(profile_name));
+    }
+
+    #[test]
+    #[serial]
+    fn test_add_package_multiple_times() {
+        let _temp = setup_test_env();
+        let profile_name = "test-add-multiple";
+
+        // Create profile with a package
+        let profile = Profile {
+            name: profile_name.to_string(),
+            packages: vec![ProfilePackage {
+                name: "docker".to_string(),
+                display: None,
+                installers: HashMap::new(),
+                detect: None,
+                dependencies: vec![],
+            }],
+        };
+        write_profile(&profile).unwrap();
+
+        // First attempt should fail
+        let result = add_package_to_profile(profile_name, "docker");
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("is already present in profile"));
+
+        // Verify the profile still has only one package
+        let updated_profile = read_profile(profile_name).unwrap();
+        assert_eq!(updated_profile.packages.len(), 1);
+        assert_eq!(updated_profile.packages[0].name, "docker");
     }
 }
