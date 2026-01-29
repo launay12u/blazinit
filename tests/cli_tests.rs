@@ -89,3 +89,40 @@ fn test_cannot_delete_default_profile() {
             "Cannot delete the default profile",
         ));
 }
+
+#[test]
+fn test_cannot_add_duplicate_package() {
+    let temp_dir = setup_test_env();
+
+    // Create a test profile
+    blazinit_cmd(&temp_dir)
+        .arg("create")
+        .arg("test-profile")
+        .assert()
+        .success();
+
+    // Manually write a profile with a package (since add requires registry)
+    let config_path = temp_dir.path().join(".config/blazinit/profiles");
+    std::fs::create_dir_all(&config_path).unwrap();
+    let profile_file = config_path.join("test-profile.toml");
+    std::fs::write(
+        &profile_file,
+        r#"name = "test-profile"
+
+[[packages]]
+name = "git"
+"#,
+    )
+    .unwrap();
+
+    // Try to add the same package again
+    blazinit_cmd(&temp_dir)
+        .arg("add")
+        .arg("git")
+        .arg("test-profile")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "is already present in profile",
+        ));
+}
