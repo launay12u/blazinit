@@ -1,7 +1,5 @@
 use clap::{Parser, Subcommand};
 
-use crate::profile;
-
 #[derive(Parser)]
 #[command(name = "blazinit")]
 #[command(version)]
@@ -16,7 +14,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    #[command(about = "Create a new profile to hold software")]
+    #[command(about = "Create a new profile to hold packages")]
     Create {
         #[arg(help = "Name of the profile to create")]
         profile: String,
@@ -28,38 +26,49 @@ pub enum Commands {
         profile: String,
     },
 
-    #[command(about = "List all software in a profile")]
+    #[command(about = "List all packages in a profile")]
     Show {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(
+            help = "Profile name to show. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
     },
 
     #[command(about = "List all saved profiles")]
     List,
 
-    #[command(about = "Add a software dependency to a profile")]
+    #[command(about = "Add a package dependency to a profile")]
     Add {
-        #[arg(help = "Software identifier to add")]
-        software: String,
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(help = "Package identifier to add")]
+        package: String,
+        #[arg(
+            help = "Profile name to add package to. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
     },
 
-    #[command(about = "Remove a software dependency from a profile")]
+    #[command(about = "Remove a package dependency from a profile")]
     Remove {
-        #[arg(help = "Software identifier to remove")]
-        software: String,
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(help = "Package identifier to remove")]
+        package: String,
+        #[arg(
+            help = "Profile name to remove package from. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
     },
 
     #[command(about = "List available software packages")]
-    ListPackages,
+    ListPackages {
+        #[arg(help = "Optional search query to filter packages")]
+        query: Option<String>,
+    },
 
     #[command(about = "Export a profile to a TOML file")]
     Export {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
-        profile: String,
+        #[arg(
+            help = "Profile name to export. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
         #[arg(help = "Optional file path to export to")]
         file: Option<String>,
     },
@@ -70,9 +79,17 @@ pub enum Commands {
         file: String,
     },
 
-    #[command(about = "Install all software defined in a profile")]
+    #[command(about = "Install all packages defined in a profile")]
     Install {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        #[arg(
+            help = "Profile name to install. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
+    },
+
+    #[command(about = "Set the default profile")]
+    SetDefault {
+        #[arg(help = "Name of the profile to set as default")]
         profile: String,
     },
 }

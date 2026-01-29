@@ -1,19 +1,25 @@
-version = "1.2"
+version = "1"
 
-[software.git]
+[package.curl]
+display = "cURL"
+packages.apt = "curl"
+packages.brew = "curl"
+detect = "curl --version"
+
+[package.git]
 display = "Git"
 packages.apt = "git"
 packages.brew = "git"
 detect = "git --version"
 
-[software.vscode]
-display = "Visual Studio Code"
-packages.apt = "code"
-packages.brew = "visual-studio-code"
-detect = "code --version"
+[package.unzip]
+display = "Unzip"
+packages.apt = "unzip"
+packages.brew = "unzip"
+detect = "unzip --version"
 
-[software.docker]
-display = "Docker"
-packages.apt = "docker.io"
-packages.brew = "docker"
-detect = "docker --version"
+[package.brew]
+display = "Homebrew"
+packages.custom = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+detect = "brew --version"
+dependencies = ["curl"]
