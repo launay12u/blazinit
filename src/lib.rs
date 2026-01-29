@@ -28,8 +28,12 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         cli::Commands::Import { file } => {
             println!("Import profile from {:?}", file)
         }
-        cli::Commands::Install { profile } => {
-            println!("Install profile: {}", profile)
+        cli::Commands::Install { profile, dry_run } => {
+            if *dry_run {
+                println!("Dry run: Install profile: {}", profile);
+            } else {
+                println!("Install profile: {}", profile);
+            }
         }
     }
 

@@ -74,5 +74,7 @@ pub enum Commands {
     Install {
         #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
         profile: String,
+        #[arg(long, help = "Print the commands that would be executed, but do not execute them")]
+        dry_run: bool,
     },
 }
