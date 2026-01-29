@@ -16,7 +16,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    #[command(about = "Create a new profile to hold software")]
+    #[command(about = "Create a new profile to hold packages")]
     Create {
         #[arg(help = "Name of the profile to create")]
         profile: String,
@@ -28,28 +28,28 @@ pub enum Commands {
         profile: String,
     },
 
-    #[command(about = "List all software in a profile")]
+    #[command(about = "List all packages in a profile")]
     Show {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        #[arg(help = "Profile name to add packages to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
         profile: String,
     },
 
     #[command(about = "List all saved profiles")]
     List,
 
-    #[command(about = "Add a software dependency to a profile")]
+    #[command(about = "Add a package dependency to a profile")]
     Add {
-        #[arg(help = "Software identifier to add")]
-        software: String,
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        #[arg(help = "Package identifier to add")]
+        package: String,
+        #[arg(help = "Profile name to add package to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
         profile: String,
     },
 
-    #[command(about = "Remove a software dependency from a profile")]
+    #[command(about = "Remove a package dependency from a profile")]
     Remove {
-        #[arg(help = "Software identifier to remove")]
-        software: String,
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        #[arg(help = "Package identifier to remove")]
+        package: String,
+        #[arg(help = "Profile name to remove package from", default_value_t = String::from(profile::DEFAULT_PROFILE))]
         profile: String,
     },
 
@@ -58,7 +58,7 @@ pub enum Commands {
 
     #[command(about = "Export a profile to a TOML file")]
     Export {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        #[arg(help = "Profile name to export", default_value_t = String::from(profile::DEFAULT_PROFILE))]
         profile: String,
         #[arg(help = "Optional file path to export to")]
         file: Option<String>,
@@ -70,9 +70,9 @@ pub enum Commands {
         file: String,
     },
 
-    #[command(about = "Install all software defined in a profile")]
+    #[command(about = "Install all packages defined in a profile")]
     Install {
-        #[arg(help = "Profile name to add software to", default_value_t = String::from(profile::DEFAULT_PROFILE))]
+        #[arg(help = "Profile name to install", default_value_t = String::from(profile::DEFAULT_PROFILE))]
         profile: String,
     },
 }
