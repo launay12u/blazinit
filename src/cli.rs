@@ -50,6 +50,11 @@ pub enum Commands {
             help = "Profile name to add package to. Defaults to current default profile if not specified"
         )]
         profile: Option<String>,
+        #[arg(
+            long,
+            help = "Pin a specific installer for this package (apt, brew, pacman, ...)"
+        )]
+        installer: Option<String>,
     },
 
     #[command(about = "Remove a package dependency from a profile")]
@@ -60,14 +65,6 @@ pub enum Commands {
             help = "Profile name to remove package from. Defaults to current default profile if not specified"
         )]
         profile: Option<String>,
-    },
-
-    #[command(
-        about = "List available software packages (deprecated: use 'registry list')"
-    )]
-    ListPackages {
-        #[arg(help = "Optional search query to filter packages")]
-        query: Option<String>,
     },
 
     #[command(about = "Export a profile to a TOML file")]

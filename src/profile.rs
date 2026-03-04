@@ -16,10 +16,17 @@ pub struct ProfilePackage {
     pub dependencies: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PackageRef {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installer: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Profile {
     pub name: String,
-    pub packages: Vec<ProfilePackage>,
+    pub packages: Vec<PackageRef>,
 }
 
 pub const PROFILE_DIRNAME: &str = "profiles";
@@ -63,14 +70,14 @@ pub fn write_profile(profile: &Profile) -> Result<(), String> {
 pub fn add_package_to_profile(
     profile_name: &str,
     package_name: &str,
+    installer: Option<String>,
 ) -> Result<(), String> {
     let mut profile = read_profile(profile_name)?;
 
-    let existing_package_names: std::collections::HashSet<_> =
+    let existing_names: std::collections::HashSet<_> =
         profile.packages.iter().map(|p| p.name.clone()).collect();
 
-    // Check if the main package already exists
-    if existing_package_names.contains(package_name) {
+    if existing_names.contains(package_name) {
         return Err(format!(
             "Package '{}' is already present in profile '{}'",
             package_name, profile_name
@@ -84,51 +91,51 @@ pub fn add_package_to_profile(
         ));
     }
 
-    let mut to_add_name_queue = vec![package_name.to_string()];
-    let mut processed_names = std::collections::HashSet::new();
-    let mut new_additions_details: Vec<ProfilePackage> = Vec::new();
+    let mut queue = vec![package_name.to_string()];
+    let mut processed = std::collections::HashSet::new();
+    let mut added: Vec<PackageRef> = Vec::new();
 
-    while let Some(current_package_name) = to_add_name_queue.pop() {
-        if existing_package_names.contains(&current_package_name)
-            || processed_names.contains(&current_package_name)
-        {
+    while let Some(current) = queue.pop() {
+        if existing_names.contains(&current) || processed.contains(&current) {
             continue;
         }
 
-        let package_details = match crate::registry::get_package_details(
-            &current_package_name,
-        ) {
-            Ok(details) => details,
-            Err(e) => {
-                eprintln!(
-                    "Warning: Package '{}' (dependency) not found in registry. Skipping. Error: {}",
-                    current_package_name, e
-                );
-                continue;
-            }
+        let pkg_installer = if current == package_name {
+            installer.clone()
+        } else {
+            None
         };
 
-        new_additions_details.push(package_details.clone());
-        processed_names.insert(current_package_name.clone());
+        added.push(PackageRef {
+            name: current.clone(),
+            installer: pkg_installer,
+        });
+        processed.insert(current.clone());
 
-        for dep_name in package_details.dependencies {
-            to_add_name_queue.push(dep_name);
+        match crate::registry::get_dependencies(&current) {
+            Ok(deps) => {
+                for dep in deps {
+                    queue.push(dep);
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: could not resolve dependencies for '{}': {}",
+                    current, e
+                );
+            }
         }
     }
 
     println!("Adding to profile '{}':", profile_name);
-    for item in &new_additions_details {
+    for item in &added {
         println!("- {}", item.name);
         profile.packages.push(item.clone());
     }
 
     profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
-
     write_profile(&profile)?;
-    println!(
-        "Successfully added {} package(s).",
-        new_additions_details.len()
-    );
+    println!("Successfully added {} package(s).", added.len());
 
     Ok(())
 }
@@ -141,20 +148,15 @@ pub fn show_profile(profile_name: &str) -> Result<(), String> {
         println!("  No packages in this profile.");
     } else {
         println!("  Packages:");
-        for pkg in p.packages {
-            let display_name = pkg.display.unwrap_or_else(|| pkg.name.clone());
-            println!("  - {}", display_name);
-            if let Some(detect) = pkg.detect {
-                println!("    Detect: {}", detect);
-            }
-            if !pkg.installers.is_empty() {
-                println!("    Installers:");
-                for (name, command) in pkg.installers {
-                    println!("      - {}: {}", name, command);
-                }
-            }
-            if !pkg.dependencies.is_empty() {
-                println!("    Dependencies: {:?}", pkg.dependencies);
+        for pkg_ref in &p.packages {
+            let display = crate::registry::get_package_details(&pkg_ref.name)
+                .ok()
+                .and_then(|d| d.display)
+                .unwrap_or_else(|| pkg_ref.name.clone());
+            if let Some(installer) = &pkg_ref.installer {
+                println!("  - {} (installer: {})", display, installer);
+            } else {
+                println!("  - {}", display);
             }
         }
     }
@@ -477,12 +479,9 @@ mod tests {
 
         let profile = Profile {
             name: "write-test".to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "test-package".to_string(),
-                display: Some("Test Package".to_string()),
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
 
@@ -541,7 +540,8 @@ mod tests {
 
         create_profile(profile_name).unwrap();
 
-        let result = add_package_to_profile(profile_name, "nonexistent-pkg");
+        let result =
+            add_package_to_profile(profile_name, "nonexistent-pkg", None);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("not found in registry"));
     }
@@ -551,7 +551,8 @@ mod tests {
     fn test_add_package_to_profile_non_existent_profile() {
         let _temp = setup_test_env();
 
-        let result = add_package_to_profile("non-existent", "some-package");
+        let result =
+            add_package_to_profile("non-existent", "some-package", None);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("does not exist"));
     }
@@ -562,23 +563,16 @@ mod tests {
         let _temp = setup_test_env();
         let profile_name = "test-remove";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
             packages: vec![
-                ProfilePackage {
+                PackageRef {
                     name: "package1".to_string(),
-                    display: None,
-                    installers: HashMap::new(),
-                    detect: None,
-                    dependencies: vec![],
+                    installer: None,
                 },
-                ProfilePackage {
+                PackageRef {
                     name: "package2".to_string(),
-                    display: None,
-                    installers: HashMap::new(),
-                    detect: None,
-                    dependencies: vec![],
+                    installer: None,
                 },
             ],
         };
@@ -629,15 +623,11 @@ mod tests {
         let _temp = setup_test_env();
         let profile_name = "test-remove-multiple";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "brew".to_string(),
-                display: None,
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
         write_profile(&profile).unwrap();
@@ -658,21 +648,17 @@ mod tests {
         let _temp = setup_test_env();
         let profile_name = "test-add-duplicate";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "git".to_string(),
-                display: None,
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
         write_profile(&profile).unwrap();
 
         // Try to add the same package again
-        let result = add_package_to_profile(profile_name, "git");
+        let result = add_package_to_profile(profile_name, "git", None);
         assert!(result.is_err());
         let error_msg = result.err().unwrap();
         assert!(error_msg.contains("is already present in profile"));
@@ -763,21 +749,17 @@ mod tests {
         let _temp = setup_test_env();
         let profile_name = "test-add-multiple";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "docker".to_string(),
-                display: None,
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
         write_profile(&profile).unwrap();
 
         // First attempt should fail
-        let result = add_package_to_profile(profile_name, "docker");
+        let result = add_package_to_profile(profile_name, "docker", None);
         assert!(result.is_err());
         assert!(
             result

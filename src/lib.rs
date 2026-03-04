@@ -34,13 +34,17 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             profile::show_profile(&profile_name)?
         }
 
-        cli::Commands::Add { profile, package } => {
+        cli::Commands::Add {
+            profile,
+            package,
+            installer,
+        } => {
             let profile_name = resolve_profile_name(profile);
-            profile::add_package_to_profile(&profile_name, package)?
-        }
-
-        cli::Commands::ListPackages { query } => {
-            registry::list_packages(query)?;
+            profile::add_package_to_profile(
+                &profile_name,
+                package,
+                installer.clone(),
+            )?
         }
 
         cli::Commands::Remove { profile, package } => {
