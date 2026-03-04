@@ -77,6 +77,13 @@ pub fn add_package_to_profile(
         ));
     }
 
+    if !crate::registry::is_package_in_registry(package_name)? {
+        return Err(format!(
+            "Package '{}' not found in registry",
+            package_name
+        ));
+    }
+
     let mut to_add_name_queue = vec![package_name.to_string()];
     let mut processed_names = std::collections::HashSet::new();
     let mut new_additions_details: Vec<ProfilePackage> = Vec::new();
@@ -183,18 +190,56 @@ pub fn export_profile(
     profile_name: &str,
     file: &Option<String>,
 ) -> Result<(), String> {
-    println!("Export profile {} to {:?}", profile_name, file);
+    let src = profile_path(profile_name);
+    if !src.exists() {
+        return Err(format!("Profile '{}' does not exist", profile_name));
+    }
+
+    match file {
+        Some(dest) => {
+            fs::copy(&src, dest)
+                .map_err(|e| format!("Failed to export profile: {}", e))?;
+            println!("Profile '{}' exported to '{}'", profile_name, dest);
+        }
+        None => {
+            let content = fs::read_to_string(&src)
+                .map_err(|e| format!("Failed to read profile: {}", e))?;
+            print!("{}", content);
+        }
+    }
+
     Ok(())
 }
 
 pub fn import_profile(file: &str) -> Result<(), String> {
-    println!("Import profile from {:?}", file);
+    let content = fs::read_to_string(file)
+        .map_err(|e| format!("Failed to read file '{}': {}", file, e))?;
+
+    let profile: Profile = toml::from_str(&content)
+        .map_err(|e| format!("Invalid profile file: {}", e))?;
+
+    let dest = profile_path(&profile.name);
+    if dest.exists() {
+        return Err(format!(
+            "Profile '{}' already exists. Delete it first or rename the import file.",
+            profile.name
+        ));
+    }
+
+    fs::write(&dest, &content)
+        .map_err(|e| format!("Failed to write profile: {}", e))?;
+
+    println!("Profile '{}' imported successfully.", profile.name);
     Ok(())
 }
 
-pub fn install_profile(profile_name: &str) -> Result<(), String> {
-    println!("Install profile: {}", profile_name);
-    Ok(())
+pub fn install_profile(
+    profile_name: &str,
+    force: bool,
+    installer: &Option<String>,
+) -> Result<(), String> {
+    let profile = read_profile(profile_name)?;
+    crate::installer::run_install(&profile, force, installer)
 }
 
 pub fn create_profile(profile_name: &str) -> Result<(), String> {
@@ -477,6 +522,32 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_add_package_not_in_registry() {
+        let _temp = setup_test_env();
+        let profile_name = "test-registry-validation";
+
+        let reg_dir = crate::config::config_dir().join("registry");
+        std::fs::create_dir_all(&reg_dir).unwrap();
+        std::fs::write(
+            reg_dir.join("metadata.toml"),
+            "version = \"2\"\npackages = []\n",
+        )
+        .unwrap();
+        std::fs::write(
+            reg_dir.join("existing.toml"),
+            "display = \"Existing\"\n",
+        )
+        .unwrap();
+
+        create_profile(profile_name).unwrap();
+
+        let result = add_package_to_profile(profile_name, "nonexistent-pkg");
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("not found in registry"));
+    }
+
+    #[test]
+    #[serial]
     fn test_add_package_to_profile_non_existent_profile() {
         let _temp = setup_test_env();
 
@@ -607,6 +678,83 @@ mod tests {
         assert!(error_msg.contains("is already present in profile"));
         assert!(error_msg.contains("git"));
         assert!(error_msg.contains(profile_name));
+    }
+
+    #[test]
+    #[serial]
+    fn test_export_to_file() {
+        let _temp = setup_test_env();
+        let profile_name = "test-export";
+        create_profile(profile_name).unwrap();
+
+        let dest = _temp.path().join("exported.toml");
+        let dest_str = dest.to_str().unwrap().to_string();
+        let result = export_profile(profile_name, &Some(dest_str));
+        assert!(result.is_ok());
+        assert!(dest.exists());
+
+        let content = fs::read_to_string(&dest).unwrap();
+        assert!(content.contains(profile_name));
+    }
+
+    #[test]
+    #[serial]
+    fn test_export_non_existent_profile() {
+        let _temp = setup_test_env();
+        let result = export_profile("ghost", &None);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("does not exist"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_roundtrip() {
+        let _temp = setup_test_env();
+        let profile_name = "roundtrip-profile";
+        create_profile(profile_name).unwrap();
+
+        let dest = _temp.path().join("roundtrip.toml");
+        let dest_str = dest.to_str().unwrap().to_string();
+        export_profile(profile_name, &Some(dest_str.clone())).unwrap();
+
+        delete_profile(profile_name).unwrap_or_default();
+        // Use a different profile name so delete doesn't block (default
+        // protection) The exported file still has original name so just
+        // delete the file directly
+        if profile_path(profile_name).exists() {
+            fs::remove_file(profile_path(profile_name)).unwrap();
+        }
+
+        let result = import_profile(&dest_str);
+        assert!(result.is_ok());
+        assert!(profile_path(profile_name).exists());
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_duplicate_fails() {
+        let _temp = setup_test_env();
+        let profile_name = "dup-import";
+        create_profile(profile_name).unwrap();
+
+        let dest = _temp.path().join("dup.toml");
+        let dest_str = dest.to_str().unwrap().to_string();
+        export_profile(profile_name, &Some(dest_str.clone())).unwrap();
+
+        let result = import_profile(&dest_str);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("already exists"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_invalid_toml_fails() {
+        let _temp = setup_test_env();
+        let bad_file = _temp.path().join("bad.toml");
+        fs::write(&bad_file, "not valid toml ][[[").unwrap();
+        let result = import_profile(bad_file.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Invalid profile file"));
     }
 
     #[test]

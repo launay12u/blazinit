@@ -62,7 +62,9 @@ pub enum Commands {
         profile: Option<String>,
     },
 
-    #[command(about = "List available software packages")]
+    #[command(
+        about = "List available software packages (deprecated: use 'registry list')"
+    )]
     ListPackages {
         #[arg(help = "Optional search query to filter packages")]
         query: Option<String>,
@@ -74,7 +76,9 @@ pub enum Commands {
             help = "Profile name to export. Defaults to current default profile if not specified"
         )]
         profile: Option<String>,
-        #[arg(help = "Optional file path to export to")]
+        #[arg(
+            help = "Optional file path to export to. Prints to stdout if omitted"
+        )]
         file: Option<String>,
     },
 
@@ -90,11 +94,45 @@ pub enum Commands {
             help = "Profile name to install. Defaults to current default profile if not specified"
         )]
         profile: Option<String>,
+        #[arg(
+            long,
+            help = "Force reinstall even if already detected as installed"
+        )]
+        force: bool,
+        #[arg(
+            long,
+            help = "Override installer (apt, brew, pacman, dnf, yum, winget, custom)"
+        )]
+        installer: Option<String>,
     },
 
     #[command(about = "Set the default profile")]
     SetDefault {
         #[arg(help = "Name of the profile to set as default")]
         profile: String,
+    },
+
+    #[command(about = "Manage the package registry")]
+    Registry {
+        #[command(subcommand)]
+        command: RegistryCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum RegistryCommands {
+    #[command(about = "List available packages")]
+    List {
+        #[arg(help = "Optional search query to filter packages")]
+        query: Option<String>,
+    },
+
+    #[command(about = "Update registry from remote")]
+    Update,
+
+    #[command(about = "Add a custom package from a TOML file")]
+    Add {
+        #[arg(help = "Path to the package TOML file")]
+        file: String,
     },
 }

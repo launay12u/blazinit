@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod config;
+pub mod installer;
 pub mod profile;
 pub mod registry;
 
@@ -41,20 +42,39 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         cli::Commands::ListPackages { query } => {
             registry::list_packages(query)?;
         }
+
         cli::Commands::Remove { profile, package } => {
             let profile_name = resolve_profile_name(profile);
             profile::remove_package_from_profile(&profile_name, package)?
         }
+
         cli::Commands::Export { profile, file } => {
             let profile_name = resolve_profile_name(profile);
             profile::export_profile(&profile_name, file)?
         }
+
         cli::Commands::Import { file } => profile::import_profile(file)?,
 
-        cli::Commands::Install { profile } => {
+        cli::Commands::Install {
+            profile,
+            force,
+            installer,
+        } => {
             let profile_name = resolve_profile_name(profile);
-            profile::install_profile(&profile_name)?
+            profile::install_profile(&profile_name, *force, installer)?
         }
+
+        cli::Commands::Registry { command } => match command {
+            cli::RegistryCommands::List { query } => {
+                registry::list_packages(query)?;
+            }
+            cli::RegistryCommands::Update => {
+                registry::update_registry()?;
+            }
+            cli::RegistryCommands::Add { file } => {
+                registry::add_custom_package(file)?;
+            }
+        },
     }
 
     Ok(())
