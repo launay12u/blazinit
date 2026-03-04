@@ -63,9 +63,15 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             profile,
             force,
             installer,
+            dry_run,
         } => {
             let profile_name = resolve_profile_name(profile);
-            profile::install_profile(&profile_name, *force, installer)?
+            profile::install_profile(
+                &profile_name,
+                *force,
+                installer,
+                *dry_run,
+            )?
         }
 
         cli::Commands::Registry { command } => match command {

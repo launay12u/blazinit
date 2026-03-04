@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 
+use colored::Colorize;
 use dirs_next;
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
@@ -77,7 +78,11 @@ pub fn set_default_profile(profile_name: &str) -> Result<(), String> {
     let toml_str = toml::to_string(&config).map_err(|e| e.to_string())?;
     fs::write(config_file_path(), toml_str).map_err(|e| e.to_string())?;
 
-    println!("Default profile set to '{}'.", profile_name);
+    println!(
+        "{} '{}'.",
+        "Default profile set to".green(),
+        profile_name.cyan()
+    );
 
     Ok(())
 }

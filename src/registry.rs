@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
+use colored::Colorize;
 use toml::Table;
 
 use crate::{
@@ -120,7 +121,7 @@ pub fn list_packages(query: &Option<String>) -> Result<(), String> {
         .ok_or("Registry is missing the '[package]' table")?;
 
     let mut found = false;
-    println!("Available packages:");
+    println!("{}", "Available packages:".bold());
 
     for (name, details) in packages_table {
         if let Some(q) = query
@@ -130,27 +131,31 @@ pub fn list_packages(query: &Option<String>) -> Result<(), String> {
         }
         found = true;
 
-        println!("- {}", name);
+        println!("- {}", name.cyan().bold());
         if let Some(installers) =
             details.get("packages").and_then(|i| i.as_table())
         {
-            println!("  Installers:");
+            println!("  {}", "Installers:".dimmed());
             for (installer_name, value) in installers {
                 if installer_name == "custom" {
                     if let Some(cmd) = value.as_str() {
-                        println!("    - custom: {}", cmd);
+                        println!(
+                            "    - {}: {}",
+                            "custom".yellow(),
+                            cmd.dimmed()
+                        );
                     }
                 } else {
-                    println!("    - {}", installer_name);
+                    println!("    - {}", installer_name.green());
                 }
             }
         } else {
-            println!("  No installers specified.");
+            println!("  {}", "No installers specified.".dimmed());
         }
     }
 
     if !found {
-        println!("No packages found matching your query.");
+        println!("{}", "No packages found matching your query.".yellow());
     }
 
     Ok(())
@@ -285,8 +290,9 @@ pub fn update_registry() -> Result<(), String> {
                 == Some(remote_version)
         {
             println!(
-                "Registry is already up to date (version {}).",
-                remote_version
+                "{} (version {}).",
+                "Registry is already up to date".green(),
+                remote_version.bold()
             );
             return Ok(());
         }
@@ -310,8 +316,10 @@ pub fn update_registry() -> Result<(), String> {
             }
             Err(e) => {
                 eprintln!(
-                    "Warning: failed to fetch package '{}': {}",
-                    pkg_name, e
+                    "{} failed to fetch package '{}': {}",
+                    "Warning:".yellow().bold(),
+                    pkg_name.cyan(),
+                    e
                 );
             }
         }
@@ -321,8 +329,9 @@ pub fn update_registry() -> Result<(), String> {
         .map_err(|e| format!("Failed to write metadata: {}", e))?;
 
     println!(
-        "Registry updated to version {} ({} packages).",
-        remote_version,
+        "{} version {} ({} packages).",
+        "Registry updated to".green(),
+        remote_version.bold(),
         remote_packages.len()
     );
     Ok(())
@@ -344,7 +353,11 @@ pub fn add_custom_package(file: &str) -> Result<(), String> {
     fs::copy(file, &dest)
         .map_err(|e| format!("Failed to copy package file: {}", e))?;
 
-    println!("Package added to registry from '{}'.", file);
+    println!(
+        "{} from '{}'.",
+        "Package added to registry".green(),
+        file.cyan()
+    );
     Ok(())
 }
 

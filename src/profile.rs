@@ -91,51 +91,16 @@ pub fn add_package_to_profile(
         ));
     }
 
-    let mut queue = vec![package_name.to_string()];
-    let mut processed = std::collections::HashSet::new();
-    let mut added: Vec<PackageRef> = Vec::new();
-
-    while let Some(current) = queue.pop() {
-        if existing_names.contains(&current) || processed.contains(&current) {
-            continue;
-        }
-
-        let pkg_installer = if current == package_name {
-            installer.clone()
-        } else {
-            None
-        };
-
-        added.push(PackageRef {
-            name: current.clone(),
-            installer: pkg_installer,
-        });
-        processed.insert(current.clone());
-
-        match crate::registry::get_dependencies(&current) {
-            Ok(deps) => {
-                for dep in deps {
-                    queue.push(dep);
-                }
-            }
-            Err(e) => {
-                eprintln!(
-                    "Warning: could not resolve dependencies for '{}': {}",
-                    current, e
-                );
-            }
-        }
-    }
-
-    println!("Adding to profile '{}':", profile_name);
-    for item in &added {
-        println!("- {}", item.name);
-        profile.packages.push(item.clone());
-    }
-
+    profile.packages.push(PackageRef {
+        name: package_name.to_string(),
+        installer,
+    });
     profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
     write_profile(&profile)?;
-    println!("Successfully added {} package(s).", added.len());
+
+    println!("Adding to profile {}:", profile_name.cyan().bold());
+    println!("  {} {}", "+".green().bold(), package_name.cyan());
+    println!("{}", "Successfully added 1 package.".green());
 
     Ok(())
 }
@@ -143,20 +108,24 @@ pub fn add_package_to_profile(
 pub fn show_profile(profile_name: &str) -> Result<(), String> {
     let p = read_profile(profile_name)
         .map_err(|e| format!("Failed to read profile: {}", e))?;
-    println!("Profile: {}", p.name);
+    println!("{} {}", "Profile:".bold(), p.name.cyan().bold());
     if p.packages.is_empty() {
-        println!("  No packages in this profile.");
+        println!("  {}", "No packages in this profile.".dimmed());
     } else {
-        println!("  Packages:");
+        println!("  {}", "Packages:".bold());
         for pkg_ref in &p.packages {
             let display = crate::registry::get_package_details(&pkg_ref.name)
                 .ok()
                 .and_then(|d| d.display)
                 .unwrap_or_else(|| pkg_ref.name.clone());
             if let Some(installer) = &pkg_ref.installer {
-                println!("  - {} (installer: {})", display, installer);
+                println!(
+                    "  - {} {}",
+                    display.cyan(),
+                    format!("(installer: {})", installer).dimmed()
+                );
             } else {
-                println!("  - {}", display);
+                println!("  - {}", display.cyan());
             }
         }
     }
@@ -181,8 +150,10 @@ pub fn remove_package_from_profile(
 
     write_profile(&profile)?;
     println!(
-        "Successfully removed package '{}' from profile '{}'",
-        package_name, profile_name
+        "{} '{}' from profile '{}'",
+        "Successfully removed".green(),
+        package_name.cyan(),
+        profile_name.cyan()
     );
 
     Ok(())
@@ -201,7 +172,12 @@ pub fn export_profile(
         Some(dest) => {
             fs::copy(&src, dest)
                 .map_err(|e| format!("Failed to export profile: {}", e))?;
-            println!("Profile '{}' exported to '{}'", profile_name, dest);
+            println!(
+                "{} '{}' exported to '{}'",
+                "Profile".green(),
+                profile_name.cyan(),
+                dest.cyan()
+            );
         }
         None => {
             let content = fs::read_to_string(&src)
@@ -231,7 +207,11 @@ pub fn import_profile(file: &str) -> Result<(), String> {
     fs::write(&dest, &content)
         .map_err(|e| format!("Failed to write profile: {}", e))?;
 
-    println!("Profile '{}' imported successfully.", profile.name);
+    println!(
+        "{} '{}'.",
+        "Profile imported successfully:".green(),
+        profile.name.cyan()
+    );
     Ok(())
 }
 
@@ -239,9 +219,10 @@ pub fn install_profile(
     profile_name: &str,
     force: bool,
     installer: &Option<String>,
+    dry_run: bool,
 ) -> Result<(), String> {
     let profile = read_profile(profile_name)?;
-    crate::installer::run_install(&profile, force, installer)
+    crate::installer::run_install(&profile, force, installer, dry_run)
 }
 
 pub fn create_profile(profile_name: &str) -> Result<(), String> {
@@ -258,7 +239,11 @@ pub fn create_profile(profile_name: &str) -> Result<(), String> {
 
     let toml_str = toml::to_string(&profile).map_err(|e| e.to_string())?;
     fs::write(path, toml_str).map_err(|e| e.to_string())?;
-    println!("Successfully created profile '{}'.", profile_name);
+    println!(
+        "{} '{}'.",
+        "Successfully created profile".green(),
+        profile_name.cyan()
+    );
 
     Ok(())
 }
@@ -279,7 +264,11 @@ pub fn delete_profile(profile_name: &str) -> Result<(), String> {
     }
 
     fs::remove_file(path).map_err(|e| e.to_string())?;
-    println!("Successfully deleted profile '{}'.", profile_name);
+    println!(
+        "{} '{}'.",
+        "Successfully deleted profile".green(),
+        profile_name.cyan()
+    );
     Ok(())
 }
 

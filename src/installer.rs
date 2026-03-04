@@ -3,6 +3,8 @@ use std::{
     process::Command,
 };
 
+use colored::Colorize;
+
 use crate::profile::{PackageRef, Profile, ProfilePackage};
 
 const INSTALLER_PRIORITY: &[&str] =
@@ -93,20 +95,12 @@ pub fn is_installed(pkg: &ProfilePackage) -> bool {
 }
 
 fn topological_sort(packages: &[PackageRef]) -> Result<Vec<String>, String> {
-    let mut dep_map: HashMap<String, Vec<String>> = HashMap::new();
-    for pkg_ref in packages {
-        let deps = crate::registry::get_dependencies(&pkg_ref.name)
-            .unwrap_or_default();
-        dep_map.insert(pkg_ref.name.clone(), deps);
-    }
-
     let mut visited: HashSet<String> = HashSet::new();
     let mut in_stack: HashSet<String> = HashSet::new();
     let mut order: Vec<String> = Vec::new();
 
     fn dfs(
         name: &str,
-        dep_map: &HashMap<String, Vec<String>>,
         visited: &mut HashSet<String>,
         in_stack: &mut HashSet<String>,
         order: &mut Vec<String>,
@@ -123,10 +117,9 @@ fn topological_sort(packages: &[PackageRef]) -> Result<Vec<String>, String> {
 
         in_stack.insert(name.to_string());
 
-        if let Some(deps) = dep_map.get(name) {
-            for dep in deps {
-                dfs(dep, dep_map, visited, in_stack, order)?;
-            }
+        let deps = crate::registry::get_dependencies(name).unwrap_or_default();
+        for dep in &deps {
+            dfs(dep, visited, in_stack, order)?;
         }
 
         in_stack.remove(name);
@@ -137,13 +130,7 @@ fn topological_sort(packages: &[PackageRef]) -> Result<Vec<String>, String> {
     }
 
     for pkg_ref in packages {
-        dfs(
-            &pkg_ref.name,
-            &dep_map,
-            &mut visited,
-            &mut in_stack,
-            &mut order,
-        )?;
+        dfs(&pkg_ref.name, &mut visited, &mut in_stack, &mut order)?;
     }
 
     Ok(order)
@@ -153,9 +140,10 @@ pub fn run_install(
     profile: &Profile,
     force: bool,
     cli_installer: &Option<String>,
+    dry_run: bool,
 ) -> Result<(), String> {
     if profile.packages.is_empty() {
-        println!("No packages to install in profile '{}'.", profile.name);
+        println!("{}", "No packages to install.".yellow());
         return Ok(());
     }
 
@@ -175,16 +163,19 @@ pub fn run_install(
         let pkg = match crate::registry::get_package_details(name) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("[fail] {}: {}", name, e);
+                eprintln!("{} {}: {}", "[fail]".red().bold(), name.cyan(), e);
                 failed_count += 1;
                 continue;
             }
         };
 
+        let display = pkg.display.as_deref().unwrap_or(&pkg.name);
+
         if !force && is_installed(&pkg) {
             println!(
-                "[skip] {} — already installed",
-                pkg.display.as_deref().unwrap_or(&pkg.name)
+                "{} {} — already installed",
+                "[skip]".yellow().bold(),
+                display.cyan()
             );
             skipped_count += 1;
             continue;
@@ -203,8 +194,9 @@ pub fn run_install(
                 Ok(pair) => pair,
                 Err(e) => {
                     eprintln!(
-                        "[fail] {}: {}",
-                        pkg.display.as_deref().unwrap_or(&pkg.name),
+                        "{} {}: {}",
+                        "[fail]".red().bold(),
+                        display.cyan(),
                         e
                     );
                     failed_count += 1;
@@ -218,34 +210,45 @@ pub fn run_install(
             installer_command(&installer_name, &install_value)
         };
 
+        if dry_run {
+            println!(
+                "{} {} — would run: {}",
+                "[dry-run]".cyan().bold(),
+                display.cyan(),
+                cmd_str.dimmed()
+            );
+            installed_count += 1;
+            continue;
+        }
+
         println!(
-            "[install] {} — running: {}",
-            pkg.display.as_deref().unwrap_or(&pkg.name),
-            cmd_str
+            "{} {} — {}",
+            "[install]".blue().bold(),
+            display.cyan(),
+            cmd_str.dimmed()
         );
 
         let status = Command::new("sh").arg("-c").arg(&cmd_str).status();
 
         match status {
             Ok(s) if s.success() => {
-                println!(
-                    "[ok] {}",
-                    pkg.display.as_deref().unwrap_or(&pkg.name)
-                );
+                println!("{} {}", "[ok]".green().bold(), display.cyan());
                 installed_count += 1;
             }
             Ok(s) => {
                 eprintln!(
-                    "[fail] {} — exited with status {}",
-                    pkg.display.as_deref().unwrap_or(&pkg.name),
+                    "{} {} — exited with status {}",
+                    "[fail]".red().bold(),
+                    display.cyan(),
                     s
                 );
                 failed_count += 1;
             }
             Err(e) => {
                 eprintln!(
-                    "[fail] {} — {}",
-                    pkg.display.as_deref().unwrap_or(&pkg.name),
+                    "{} {} — {}",
+                    "[fail]".red().bold(),
+                    display.cyan(),
                     e
                 );
                 failed_count += 1;
@@ -253,9 +256,18 @@ pub fn run_install(
         }
     }
 
+    let installed_label = if dry_run {
+        "would install"
+    } else {
+        "installed"
+    };
     println!(
-        "\nSummary: {} installed, {} skipped, {} failed",
-        installed_count, skipped_count, failed_count
+        "\n{} {} {}  {} skipped  {} failed",
+        "Summary:".bold(),
+        installed_count.to_string().green().bold(),
+        installed_label,
+        skipped_count.to_string().yellow().bold(),
+        failed_count.to_string().red().bold()
     );
 
     Ok(())

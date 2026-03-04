@@ -101,6 +101,11 @@ pub enum Commands {
             help = "Override installer (apt, brew, pacman, dnf, yum, winget, custom)"
         )]
         installer: Option<String>,
+        #[arg(
+            long,
+            help = "Print what would be run without executing anything"
+        )]
+        dry_run: bool,
     },
 
     #[command(about = "Set the default profile")]
