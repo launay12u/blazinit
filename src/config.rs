@@ -6,25 +6,45 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     profile::{PROFILE_DIRNAME, ensure_default_profile},
-    registry::update_registry_version_if_needed,
+    registry::ensure_registry,
 };
 
 pub static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets");
 
 const CONFIG_FILENAME: &str = "config.toml";
 const DEFAULT_PROFILE_NAME: &str = "default";
+const DEFAULT_REGISTRY_URL: &str =
+    "https://raw.githubusercontent.com/launay12u/blazinit/main/assets/registry";
 
 #[derive(Serialize, Deserialize)]
 struct Config {
     default_profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferred_installer: Option<String>,
+    #[serde(default = "default_registry_url")]
+    registry_url: String,
+}
+
+fn default_registry_url() -> String {
+    DEFAULT_REGISTRY_URL.to_string()
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             default_profile: DEFAULT_PROFILE_NAME.to_string(),
+            preferred_installer: None,
+            registry_url: DEFAULT_REGISTRY_URL.to_string(),
         }
     }
+}
+
+pub fn get_preferred_installer() -> Option<String> {
+    read_config().preferred_installer
+}
+
+pub fn get_registry_url() -> String {
+    read_config().registry_url
 }
 
 fn config_file_path() -> PathBuf {
@@ -80,7 +100,7 @@ pub fn bootstrap_config() -> Result<(), String> {
         .map_err(|e| format!("Failed to create config dir: {}", e))?;
 
     ensure_default_profile(&get_default_profile())?;
-    update_registry_version_if_needed()?;
+    ensure_registry()?;
 
     Ok(())
 }

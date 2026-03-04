@@ -1,0 +1,6 @@
+display = "cURL"
+detect = "curl --version"
+
+[packages]
+apt = "curl"
+brew = "curl"

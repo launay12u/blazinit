@@ -1,0 +1,2 @@
+version = "2"
+packages = ["brew", "curl", "git", "unzip"]

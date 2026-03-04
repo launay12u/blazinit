@@ -1,0 +1,6 @@
+display = "Git"
+detect = "git --version"
+
+[packages]
+apt = "git"
+brew = "git"

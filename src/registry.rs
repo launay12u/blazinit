@@ -1,75 +1,53 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use toml::Table;
 
 use crate::{
     config::{ASSETS, config_dir},
     profile,
-}; // Import profile module to use ProfilePackage
+};
 
-const REGISTRY_FILENAME: &str = "registry.toml";
+pub const REGISTRY_DIRNAME: &str = "registry";
+const METADATA_FILENAME: &str = "metadata.toml";
 
-fn get_bundled_registry_content() -> Result<&'static [u8], String> {
-    let file = ASSETS.get_file(REGISTRY_FILENAME).ok_or_else(|| {
-        format!("Bundled registry '{}' not found", REGISTRY_FILENAME)
-    })?;
-
-    Ok(file.contents())
+fn registry_dir() -> PathBuf {
+    config_dir().join(REGISTRY_DIRNAME)
 }
 
 fn copy_bundled_registry() -> Result<(), String> {
-    let target = config_dir().join("registry.toml");
-    let content = get_bundled_registry_content()?;
-    fs::write(target, content)
-        .map_err(|e| format!("Failed to write registry: {}", e))?;
+    let bundled_dir = ASSETS.get_dir(REGISTRY_DIRNAME).ok_or_else(|| {
+        format!(
+            "Bundled registry directory '{}' not found",
+            REGISTRY_DIRNAME
+        )
+    })?;
+
+    let target_dir = registry_dir();
+    fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create registry directory: {}", e))?;
+
+    for file in bundled_dir.files() {
+        let filename = file
+            .path()
+            .file_name()
+            .ok_or("Invalid bundled registry file path")?;
+        let target_path = target_dir.join(filename);
+        fs::write(&target_path, file.contents()).map_err(|e| {
+            format!("Failed to write registry file {:?}: {}", filename, e)
+        })?;
+    }
+
     Ok(())
 }
 
-fn get_bundled_registry_version() -> Result<String, String> {
-    let content = get_bundled_registry_content()?;
+pub fn ensure_registry() -> Result<(), String> {
+    let dir = registry_dir();
+    let needs_init = !dir.exists()
+        || fs::read_dir(&dir)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(true);
 
-    let str_content = std::str::from_utf8(content)
-        .map_err(|e| format!("Invalid UTF-8 in bundled registry: {}", e))?;
-    let value: toml::Value = toml::from_str(str_content)
-        .map_err(|e| format!("Failed to parse TOML: {}", e))?;
-
-    let version = value
-        .get("version")
-        .and_then(|v| v.as_str())
-        .ok_or("Bundled registry missing 'version' field")?;
-
-    Ok(version.to_string())
-}
-
-fn get_current_registry_version() -> Result<String, String> {
-    let current_path = config_dir().join(REGISTRY_FILENAME);
-
-    let content = fs::read(&current_path)
-        .map_err(|e| format!("Failed to read current registry: {}", e))?;
-
-    let str_content = std::str::from_utf8(&content)
-        .map_err(|e| format!("Invalid UTF-8 in current registry: {}", e))?;
-
-    let value: toml::Value = toml::from_str(str_content)
-        .map_err(|e| format!("Failed to parse TOML: {}", e))?;
-
-    let version = value
-        .get("version")
-        .and_then(|v| v.as_str())
-        .ok_or("Current registry missing 'version' field")?;
-
-    Ok(version.to_string())
-}
-
-pub fn update_registry_version_if_needed() -> Result<(), String> {
-    let bundled_version = get_bundled_registry_version()?;
-
-    let need_update = match get_current_registry_version() {
-        Ok(current_version) => current_version != bundled_version,
-        Err(_) => true,
-    };
-
-    if need_update {
+    if needs_init {
         copy_bundled_registry()?;
     }
 
@@ -77,15 +55,54 @@ pub fn update_registry_version_if_needed() -> Result<(), String> {
 }
 
 pub fn read_registry() -> Result<toml::Value, String> {
-    let registry_path = config_dir().join(REGISTRY_FILENAME);
-    let content = fs::read_to_string(&registry_path)
-        .map_err(|e| format!("Failed to read registry file: {}", e))?;
-    let value: toml::Value = toml::from_str(&content)
-        .map_err(|e| format!("Failed to parse registry TOML: {}", e))?;
-    Ok(value)
+    let dir = registry_dir();
+    let mut packages = Table::new();
+
+    let entries = fs::read_dir(&dir)
+        .map_err(|e| format!("Failed to read registry directory: {}", e))?;
+
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let path = entry.path();
+
+        let filename = match path.file_name().and_then(|f| f.to_str()) {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+
+        if !filename.ends_with(".toml") || filename == METADATA_FILENAME {
+            continue;
+        }
+
+        let stem = filename.trim_end_matches(".toml");
+        let content = fs::read_to_string(&path).map_err(|e| {
+            format!("Failed to read registry file '{}': {}", filename, e)
+        })?;
+        let value: toml::Value = toml::from_str(&content).map_err(|e| {
+            format!("Failed to parse registry file '{}': {}", filename, e)
+        })?;
+
+        packages.insert(stem.to_string(), value);
+    }
+
+    let mut root = Table::new();
+    root.insert("package".to_string(), toml::Value::Table(packages));
+    Ok(toml::Value::Table(root))
 }
 
 pub fn is_package_in_registry(package_name: &str) -> Result<bool, String> {
+    let registry = read_registry()?;
+    let packages = registry
+        .get("package")
+        .and_then(|p| p.as_table())
+        .ok_or("Registry is missing the '[package]' table")?;
+
+    if packages.contains_key(package_name) {
+        return Ok(true);
+    }
+
+    copy_bundled_registry()?;
     let registry = read_registry()?;
     let packages = registry
         .get("package")
@@ -140,22 +157,25 @@ pub fn list_packages(query: &Option<String>) -> Result<(), String> {
 }
 
 fn get_raw_package_table(package_name: &str) -> Result<Table, String> {
+    let lookup = |registry: &toml::Value| -> Option<Table> {
+        registry
+            .get("package")
+            .and_then(|v| v.as_table())
+            .and_then(|pkgs| pkgs.get(package_name))
+            .and_then(|v| v.as_table())
+            .cloned()
+    };
+
     let registry = read_registry()?;
-    let packages_table = registry
-        .get("package")
-        .and_then(|v| v.as_table())
-        .ok_or_else(|| {
-            "Registry is missing the '[package]' table".to_string()
-        })?;
+    if let Some(table) = lookup(&registry) {
+        return Ok(table);
+    }
 
-    let package_table = packages_table
-        .get(package_name)
-        .and_then(|v| v.as_table())
-        .ok_or_else(|| {
-            format!("Package '{}' not found in registry", package_name)
-        })?;
-
-    Ok(package_table.clone())
+    copy_bundled_registry()?;
+    let registry = read_registry()?;
+    lookup(&registry).ok_or_else(|| {
+        format!("Package '{}' not found in registry", package_name)
+    })
 }
 
 pub fn get_package_details(
@@ -225,7 +245,107 @@ pub fn get_dependencies(package_name: &str) -> Result<Vec<String>, String> {
         return Ok(deps);
     }
 
-    Ok(Vec::new()) // No dependencies
+    Ok(Vec::new())
+}
+
+pub fn update_registry() -> Result<(), String> {
+    let base_url = crate::config::get_registry_url();
+    let metadata_url = format!("{}/{}", base_url, METADATA_FILENAME);
+
+    let remote_body = ureq::get(&metadata_url)
+        .call()
+        .map_err(|e| format!("Failed to fetch registry metadata: {}", e))?
+        .into_string()
+        .map_err(|e| {
+            format!("Failed to read registry metadata response: {}", e)
+        })?;
+
+    let remote_meta: toml::Value = toml::from_str(&remote_body)
+        .map_err(|e| format!("Failed to parse remote metadata: {}", e))?;
+
+    let remote_version = remote_meta
+        .get("version")
+        .and_then(|v| v.as_str())
+        .ok_or("Remote metadata missing 'version' field")?;
+
+    let remote_packages: Vec<String> = remote_meta
+        .get("packages")
+        .and_then(|v| v.as_array())
+        .ok_or("Remote metadata missing 'packages' array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+
+    let local_metadata_path = registry_dir().join(METADATA_FILENAME);
+    if local_metadata_path.exists() {
+        let local_body = fs::read_to_string(&local_metadata_path)
+            .map_err(|e| format!("Failed to read local metadata: {}", e))?;
+        if let Ok(local_meta) = toml::from_str::<toml::Value>(&local_body)
+            && local_meta.get("version").and_then(|v| v.as_str())
+                == Some(remote_version)
+        {
+            println!(
+                "Registry is already up to date (version {}).",
+                remote_version
+            );
+            return Ok(());
+        }
+    }
+
+    let dir = registry_dir();
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create registry directory: {}", e))?;
+
+    for pkg_name in &remote_packages {
+        let pkg_url = format!("{}/{}.toml", base_url, pkg_name);
+        match ureq::get(&pkg_url).call() {
+            Ok(response) => {
+                let content = response.into_string().map_err(|e| {
+                    format!("Failed to read response for '{}': {}", pkg_name, e)
+                })?;
+                let dest = dir.join(format!("{}.toml", pkg_name));
+                fs::write(&dest, &content).map_err(|e| {
+                    format!("Failed to write package '{}': {}", pkg_name, e)
+                })?;
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to fetch package '{}': {}",
+                    pkg_name, e
+                );
+            }
+        }
+    }
+
+    fs::write(&local_metadata_path, &remote_body)
+        .map_err(|e| format!("Failed to write metadata: {}", e))?;
+
+    println!(
+        "Registry updated to version {} ({} packages).",
+        remote_version,
+        remote_packages.len()
+    );
+    Ok(())
+}
+
+pub fn add_custom_package(file: &str) -> Result<(), String> {
+    let content = fs::read_to_string(file)
+        .map_err(|e| format!("Failed to read file '{}': {}", file, e))?;
+
+    toml::from_str::<toml::Value>(&content)
+        .map_err(|e| format!("Invalid package file: {}", e))?;
+
+    let filename = PathBuf::from(file)
+        .file_name()
+        .ok_or("Invalid file path")?
+        .to_os_string();
+
+    let dest = registry_dir().join(&filename);
+    fs::copy(file, &dest)
+        .map_err(|e| format!("Failed to copy package file: {}", e))?;
+
+    println!("Package added to registry from '{}'.", file);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -250,96 +370,118 @@ mod tests {
         temp_dir
     }
 
+    fn create_dummy_registry(_temp_dir: &TempDir, packages: &[(&str, &str)]) {
+        let reg_dir = crate::config::config_dir().join(REGISTRY_DIRNAME);
+        fs::create_dir_all(&reg_dir).expect("Failed to create registry dir");
+
+        fs::write(reg_dir.join(METADATA_FILENAME), "version = \"2\"\n")
+            .expect("Failed to write metadata");
+
+        for (name, content) in packages {
+            fs::write(reg_dir.join(format!("{}.toml", name)), content)
+                .expect("Failed to write package file");
+        }
+    }
+
     #[test]
     #[serial]
-    fn test_registry_created_if_missing() {
+    fn test_ensure_registry_creates_dir_if_missing() {
         let _temp = setup_test_env();
-        let target = crate::config::config_dir().join(REGISTRY_FILENAME);
+        let dir = registry_dir();
 
-        assert!(!target.exists());
+        assert!(!dir.exists());
 
-        let result = update_registry_version_if_needed();
+        let result = ensure_registry();
         assert!(result.is_ok());
+        assert!(dir.exists());
 
-        assert!(target.exists());
-        let content = fs::read_to_string(target).unwrap();
-        assert!(content.contains("version"));
+        let entries: Vec<_> =
+            fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).collect();
+        assert!(entries.len() > 1);
     }
 
     #[test]
     #[serial]
-    fn test_registry_updated_if_version_mismatch() {
+    fn test_ensure_registry_skips_if_populated() {
         let _temp = setup_test_env();
-        let target = crate::config::config_dir().join(REGISTRY_FILENAME);
+        create_dummy_registry(
+            &_temp,
+            &[("mypkg", "display = \"My Package\"\n")],
+        );
 
-        // Create an old version
-        let old_registry = r#"
-            version = "0.0.0"
-            [packages]
-            fake = "old"
-        "#;
-        fs::write(&target, old_registry).unwrap();
+        ensure_registry().unwrap();
 
-        let result = update_registry_version_if_needed();
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(target).unwrap();
-        // Should not be the old one
-        assert!(!content.contains("fake = \"old\""));
-        // Should be the bundled one
-        assert!(content.contains("version"));
+        let reg_dir = registry_dir();
+        assert!(reg_dir.join("mypkg.toml").exists());
+        assert!(!reg_dir.join("curl.toml").exists());
     }
 
     #[test]
     #[serial]
-    fn test_registry_not_updated_if_version_matches() {
+    fn test_read_registry_merges_files() {
         let _temp = setup_test_env();
-        let target = crate::config::config_dir().join(REGISTRY_FILENAME);
+        create_dummy_registry(
+            &_temp,
+            &[
+                (
+                    "curl",
+                    r#"display = "cURL"
+detect = "curl --version"
 
-        // 1. Populate with current version
-        update_registry_version_if_needed().unwrap();
-        let initial_content = fs::read_to_string(&target).unwrap();
+[packages]
+apt = "curl"
+brew = "curl"
+"#,
+                ),
+                (
+                    "git",
+                    r#"display = "Git"
+detect = "git --version"
 
-        // 2. Modify content but keep the same version
-        let modified_content =
-            format!("{}\n# Modified by test", initial_content);
-        fs::write(&target, &modified_content).unwrap();
+[packages]
+apt = "git"
+"#,
+                ),
+            ],
+        );
 
-        // 3. Run update again
-        update_registry_version_if_needed().unwrap();
-
-        // 4. Check that file was NOT overwritten
-        let final_content = fs::read_to_string(&target).unwrap();
-        assert!(final_content.contains("# Modified by test"));
-    }
-
-    // Helper to create a dummy registry.toml for testing
-    fn create_dummy_registry(_temp_dir: &TempDir, content: &str) {
-        let registry_path = crate::config::config_dir().join(REGISTRY_FILENAME);
-        fs::write(&registry_path, content)
-            .expect("Failed to write dummy registry");
+        let registry = read_registry().unwrap();
+        let packages =
+            registry.get("package").and_then(|p| p.as_table()).unwrap();
+        assert!(packages.contains_key("curl"));
+        assert!(packages.contains_key("git"));
+        assert!(!packages.contains_key("metadata"));
     }
 
     #[test]
     #[serial]
     fn test_get_package_details_full() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
+        create_dummy_registry(
+            &_temp,
+            &[
+                (
+                    "curl",
+                    r#"display = "cURL"
+detect = "curl --version"
+dependencies = ["git"]
 
-            [package.curl]
-            display = "cURL"
-            packages.apt = "curl"
-            packages.brew = "curl"
-            detect = "curl --version"
-            dependencies = ["git"]
+[packages]
+apt = "curl"
+brew = "curl"
+"#,
+                ),
+                (
+                    "git",
+                    r#"display = "Git"
+detect = "git --version"
 
-            [package.git]
-            display = "Git"
-            packages.apt = "git"
-            detect = "git --version"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+[packages]
+apt = "git"
+"#,
+                ),
+            ],
+        );
 
         let details = get_package_details("curl").unwrap();
         assert_eq!(details.name, "curl");
@@ -361,13 +503,10 @@ mod tests {
     #[serial]
     fn test_get_package_details_non_existent() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.existing]
-            display = "Existing Package"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(
+            &_temp,
+            &[("existing", "display = \"Existing Package\"\n")],
+        );
 
         let result = get_package_details("non_existent");
         assert!(result.is_err());
@@ -378,19 +517,26 @@ mod tests {
     #[serial]
     fn test_list_packages_no_query_runs() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.curl]
-            display = "cURL"
-            packages.apt = "curl"
-            packages.custom = "install-curl.sh"
-
-            [package.git]
-            display = "Git"
-            packages.brew = "git"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(
+            &_temp,
+            &[
+                (
+                    "curl",
+                    r#"display = "cURL"
+[packages]
+apt = "curl"
+custom = "install-curl.sh"
+"#,
+                ),
+                (
+                    "git",
+                    r#"display = "Git"
+[packages]
+brew = "git"
+"#,
+                ),
+            ],
+        );
 
         let result = list_packages(&None);
         assert!(result.is_ok());
@@ -400,18 +546,25 @@ mod tests {
     #[serial]
     fn test_list_packages_with_query_runs() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.curl]
-            display = "cURL"
-            packages.apt = "curl"
-
-            [package.git]
-            display = "Git"
-            packages.brew = "git"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(
+            &_temp,
+            &[
+                (
+                    "curl",
+                    r#"display = "cURL"
+[packages]
+apt = "curl"
+"#,
+                ),
+                (
+                    "git",
+                    r#"display = "Git"
+[packages]
+brew = "git"
+"#,
+                ),
+            ],
+        );
 
         let query = Some("git".to_string());
         let result = list_packages(&query);
@@ -422,14 +575,16 @@ mod tests {
     #[serial]
     fn test_list_packages_no_match_runs() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.curl]
-            display = "cURL"
-            packages.apt = "curl"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(
+            &_temp,
+            &[(
+                "curl",
+                r#"display = "cURL"
+[packages]
+apt = "curl"
+"#,
+            )],
+        );
 
         let query = Some("nonexistent".to_string());
         let result = list_packages(&query);
@@ -440,14 +595,16 @@ mod tests {
     #[serial]
     fn test_is_package_in_registry_exists() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.git]
-            display = "Git"
-            packages.apt = "git"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(
+            &_temp,
+            &[(
+                "git",
+                r#"display = "Git"
+[packages]
+apt = "git"
+"#,
+            )],
+        );
 
         let result = is_package_in_registry("git");
         assert!(result.is_ok());
@@ -458,13 +615,7 @@ mod tests {
     #[serial]
     fn test_is_package_in_registry_not_exists() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.git]
-            display = "Git"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(&_temp, &[("git", "display = \"Git\"\n")]);
 
         let result = is_package_in_registry("nonexistent");
         assert!(result.is_ok());
@@ -473,32 +624,37 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_is_package_in_registry_missing_package_section() {
+    fn test_is_package_in_registry_empty_registry() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"version = "1""#;
-        create_dummy_registry(&_temp, dummy_registry);
+        let reg_dir = registry_dir();
+        fs::create_dir_all(&reg_dir).unwrap();
+        fs::write(reg_dir.join(METADATA_FILENAME), "version = \"2\"\n")
+            .unwrap();
 
-        let result = is_package_in_registry("anything");
-        assert!(result.is_err());
-        assert!(result.err().unwrap().contains("missing"));
+        let result = is_package_in_registry("curl");
+        assert!(result.is_ok());
+        assert!(result.unwrap());
     }
 
     #[test]
     #[serial]
     fn test_get_dependencies_with_deps() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
+        create_dummy_registry(
+            &_temp,
+            &[
+                (
+                    "curl",
+                    r#"display = "cURL"
+dependencies = ["git", "openssl"]
 
-            [package.curl]
-            display = "cURL"
-            packages.apt = "curl"
-            dependencies = ["git", "openssl"]
-
-            [package.git]
-            display = "Git"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+[packages]
+apt = "curl"
+"#,
+                ),
+                ("git", "display = \"Git\"\n"),
+            ],
+        );
 
         let result = get_dependencies("curl");
         assert!(result.is_ok());
@@ -513,14 +669,16 @@ mod tests {
     #[serial]
     fn test_get_dependencies_no_deps() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.git]
-            display = "Git"
-            packages.apt = "git"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(
+            &_temp,
+            &[(
+                "git",
+                r#"display = "Git"
+[packages]
+apt = "git"
+"#,
+            )],
+        );
 
         let result = get_dependencies("git");
         assert!(result.is_ok());
@@ -531,13 +689,7 @@ mod tests {
     #[serial]
     fn test_get_dependencies_non_existent() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.git]
-            display = "Git"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(&_temp, &[("git", "display = \"Git\"\n")]);
 
         let result = get_dependencies("nonexistent");
         assert!(result.is_err());
@@ -548,19 +700,68 @@ mod tests {
     #[serial]
     fn test_read_registry_success() {
         let _temp = setup_test_env();
-        let dummy_registry = r#"
-            version = "1"
-
-            [package.test]
-            display = "Test"
-        "#;
-        create_dummy_registry(&_temp, dummy_registry);
+        create_dummy_registry(&_temp, &[("test", "display = \"Test\"\n")]);
 
         let result = read_registry();
         assert!(result.is_ok());
 
         let registry = result.unwrap();
-        assert!(registry.get("version").is_some());
         assert!(registry.get("package").is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_add_custom_package_valid() {
+        let _temp = setup_test_env();
+        create_dummy_registry(&_temp, &[]);
+
+        let pkg_file = _temp.path().join("mypkg.toml");
+        fs::write(&pkg_file, "display = \"My Package\"\n").unwrap();
+
+        let result = add_custom_package(pkg_file.to_str().unwrap());
+        assert!(result.is_ok());
+        assert!(registry_dir().join("mypkg.toml").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn test_add_custom_package_invalid_toml() {
+        let _temp = setup_test_env();
+        create_dummy_registry(&_temp, &[]);
+
+        let pkg_file = _temp.path().join("bad.toml");
+        fs::write(&pkg_file, "not valid ][[[").unwrap();
+
+        let result = add_custom_package(pkg_file.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Invalid package file"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_add_custom_package_missing_file() {
+        let _temp = setup_test_env();
+        create_dummy_registry(&_temp, &[]);
+
+        let result = add_custom_package("/nonexistent/path/pkg.toml");
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Failed to read file"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_lazy_refresh_on_package_miss() {
+        let _temp = setup_test_env();
+        create_dummy_registry(
+            &_temp,
+            &[("mypkg", "display = \"My Package\"\n")],
+        );
+
+        assert!(!registry_dir().join("curl.toml").exists());
+
+        let result = is_package_in_registry("curl");
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+        assert!(registry_dir().join("curl.toml").exists());
     }
 }
