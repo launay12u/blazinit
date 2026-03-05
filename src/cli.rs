@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "blazinit")]
 #[command(version)]
 #[command(
@@ -12,7 +12,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     #[command(about = "Create a new profile to hold packages")]
     Create {
@@ -121,7 +121,7 @@ pub enum Commands {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum RegistryCommands {
     #[command(about = "List available packages")]
     List {

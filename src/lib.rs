@@ -12,36 +12,27 @@ fn resolve_profile_name(profile_arg: &Option<String>) -> String {
 }
 
 pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
-    log::debug!("bootstrapping config");
     config::bootstrap_config()?;
+    log::info!("command: {:?}", cli.command);
 
     match &cli.command {
         cli::Commands::Create { profile, default } => {
-            log::debug!("command: create profile '{}' (set_default={})", profile, default);
             profile::create_profile(profile)?;
             if *default {
                 config::set_default_profile(profile)?;
             }
         }
 
-        cli::Commands::Delete { profile } => {
-            log::debug!("command: delete profile '{}'", profile);
-            profile::delete_profile(profile)?;
-        }
+        cli::Commands::Delete { profile } => profile::delete_profile(profile)?,
 
         cli::Commands::SetDefault { profile } => {
-            log::debug!("command: set-default '{}'", profile);
             config::set_default_profile(profile)?;
         }
 
-        cli::Commands::List => {
-            log::debug!("command: list profiles");
-            profile::list_profiles();
-        }
+        cli::Commands::List => profile::list_profiles(),
 
         cli::Commands::Show { profile } => {
             let profile_name = resolve_profile_name(profile);
-            log::debug!("command: show profile '{}'", profile_name);
             profile::show_profile(&profile_name)?;
         }
 
@@ -51,12 +42,6 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             installer,
         } => {
             let profile_name = resolve_profile_name(profile);
-            log::debug!(
-                "command: add package '{}' to profile '{}' (installer={:?})",
-                package,
-                profile_name,
-                installer
-            );
             profile::add_package_to_profile(
                 &profile_name,
                 package,
@@ -66,20 +51,15 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
 
         cli::Commands::Remove { profile, package } => {
             let profile_name = resolve_profile_name(profile);
-            log::debug!("command: remove package '{}' from profile '{}'", package, profile_name);
             profile::remove_package_from_profile(&profile_name, package)?;
         }
 
         cli::Commands::Export { profile, file } => {
             let profile_name = resolve_profile_name(profile);
-            log::debug!("command: export profile '{}' to {:?}", profile_name, file);
             profile::export_profile(&profile_name, file)?;
         }
 
-        cli::Commands::Import { file } => {
-            log::debug!("command: import profile from '{}'", file);
-            profile::import_profile(file)?;
-        }
+        cli::Commands::Import { file } => profile::import_profile(file)?,
 
         cli::Commands::Install {
             profile,
@@ -88,13 +68,6 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             dry_run,
         } => {
             let profile_name = resolve_profile_name(profile);
-            log::debug!(
-                "command: install profile '{}' (force={}, dry_run={}, installer={:?})",
-                profile_name,
-                force,
-                dry_run,
-                installer
-            );
             profile::install_profile(
                 &profile_name,
                 *force,
@@ -105,7 +78,6 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
 
         cli::Commands::Registry { command } => match command {
             cli::RegistryCommands::List { query } => {
-                log::debug!("command: registry list (query={:?})", query);
                 registry::list_packages(query)?;
             }
         },
