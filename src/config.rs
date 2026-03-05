@@ -41,15 +41,11 @@ impl Default for Config {
 }
 
 pub fn get_preferred_installer() -> Option<String> {
-    let val = read_config().preferred_installer;
-    log::debug!("preferred_installer={:?}", val);
-    val
+    read_config().preferred_installer
 }
 
 pub fn get_registry_url() -> String {
-    let url = read_config().registry_url;
-    log::debug!("registry_url={}", url);
-    url
+    read_config().registry_url
 }
 
 fn config_file_path() -> PathBuf {
@@ -118,9 +114,6 @@ pub fn bootstrap_config() -> Result<(), String> {
 
     log::debug!("bootstrap: ensuring registry");
     ensure_registry()?;
-
-    log::debug!("bootstrap: checking for silent registry update");
-    crate::registry::try_update_registry_silent();
 
     log::debug!("bootstrap: complete");
     Ok(())

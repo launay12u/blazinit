@@ -224,16 +224,18 @@ pub fn import_profile(file: &str) -> Result<(), String> {
         .map_err(|e| format!("Invalid profile file: {}", e))?;
 
     let dest = profile_path(&profile.name);
-    if dest.exists() {
-        log::error!("import failed: profile '{}' already exists", profile.name);
-        return Err(format!(
-            "Profile '{}' already exists. Delete it first or rename the import file.",
-            profile.name
-        ));
-    }
-
-    fs::write(&dest, &content)
-        .map_err(|e| format!("Failed to write profile: {}", e))?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&dest)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, content.as_bytes()))
+        .map_err(|_| {
+            log::error!("import failed: profile '{}' already exists", profile.name);
+            format!(
+                "Profile '{}' already exists. Delete it first or rename the import file.",
+                profile.name
+            )
+        })?;
 
     log::info!("imported profile '{}' from '{}'", profile.name, file);
     println!(

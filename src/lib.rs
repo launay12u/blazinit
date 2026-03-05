@@ -13,6 +13,11 @@ fn resolve_profile_name(profile_arg: &Option<String>) -> String {
 
 pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     config::bootstrap_config()?;
+
+    // Check for registry updates in the background so the command runs immediately.
+    let update_handle =
+        std::thread::spawn(registry::try_update_registry_silent);
+
     log::info!("command: {:?}", cli.command);
 
     match &cli.command {
@@ -83,5 +88,6 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         },
     }
 
+    let _ = update_handle.join();
     Ok(())
 }

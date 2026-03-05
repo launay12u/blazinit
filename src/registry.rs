@@ -149,19 +149,8 @@ pub fn is_package_in_registry(package_name: &str) -> Result<bool, String> {
     log::debug!("checking if '{}' is in registry", package_name);
     let registry = read_registry()?;
     let packages = get_packages_table(&registry)?;
-
-    if packages.contains_key(package_name) {
-        log::debug!("package '{}' found in registry", package_name);
-        return Ok(true);
-    }
-
-    log::debug!("package '{}' not found, refreshing from bundled assets", package_name);
-    copy_bundled_registry()?;
-    let registry = read_registry()?;
-    let packages = get_packages_table(&registry)?;
-
     let found = packages.contains_key(package_name);
-    log::debug!("package '{}' in registry after refresh: {}", package_name, found);
+    log::debug!("package '{}' in registry: {}", package_name, found);
     Ok(found)
 }
 
@@ -717,19 +706,6 @@ apt = "git"
         assert!(!result.unwrap());
     }
 
-    #[test]
-    #[serial]
-    fn test_is_package_in_registry_empty_registry() {
-        let _temp = setup_test_env();
-        let reg_dir = registry_dir();
-        fs::create_dir_all(&reg_dir).unwrap();
-        fs::write(reg_dir.join(METADATA_FILENAME), "version = \"2\"\n")
-            .unwrap();
-
-        let result = is_package_in_registry("curl");
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
 
     #[test]
     #[serial]
@@ -843,20 +819,4 @@ apt = "git"
         assert!(result.err().unwrap().contains("Failed to read file"));
     }
 
-    #[test]
-    #[serial]
-    fn test_lazy_refresh_on_package_miss() {
-        let _temp = setup_test_env();
-        create_dummy_registry(
-            &_temp,
-            &[("mypkg", "display = \"My Package\"\n")],
-        );
-
-        assert!(!registry_dir().join("curl.toml").exists());
-
-        let result = is_package_in_registry("curl");
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-        assert!(registry_dir().join("curl.toml").exists());
-    }
 }
