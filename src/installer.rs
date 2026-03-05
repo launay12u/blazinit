@@ -31,9 +31,11 @@ pub fn detect_available_installer() -> Option<String> {
             .map(|o| o.status.success())
             .unwrap_or(false);
         if ok {
+            log::debug!("detected system installer: {}", installer);
             return Some(installer.to_string());
         }
     }
+    log::debug!("no system installer detected");
     None
 }
 
@@ -44,13 +46,16 @@ pub fn select_installer(
     // 1. CLI flag
     if let Some(name) = installer_flag {
         if let Some(value) = pkg.installers.get(name.as_str()) {
+            log::debug!("installer for '{}': cli flag '{}' -> '{}'", pkg.name, name, value);
             return Ok((name.clone(), value.clone()));
         }
         if name == "custom"
             && let Some(cmd) = pkg.installers.get("custom")
         {
+            log::debug!("installer for '{}': cli flag 'custom' -> '{}'", pkg.name, cmd);
             return Ok(("custom".to_string(), cmd.clone()));
         }
+        log::error!("installer '{}' not available for package '{}'", name, pkg.name);
         return Err(format!(
             "Installer '{}' not available for package '{}'",
             name, pkg.name
@@ -61,6 +66,7 @@ pub fn select_installer(
     if let Some(name) = crate::config::get_preferred_installer()
         && let Some(value) = pkg.installers.get(name.as_str())
     {
+        log::debug!("installer for '{}': config preferred '{}' -> '{}'", pkg.name, name, value);
         return Ok((name, value.clone()));
     }
 
@@ -68,14 +74,17 @@ pub fn select_installer(
     if let Some(detected) = detect_available_installer()
         && let Some(value) = pkg.installers.get(detected.as_str())
     {
+        log::debug!("installer for '{}': auto-detected '{}' -> '{}'", pkg.name, detected, value);
         return Ok((detected, value.clone()));
     }
 
     // 4. Fall back to custom
     if let Some(cmd) = pkg.installers.get("custom") {
+        log::debug!("installer for '{}': fallback custom -> '{}'", pkg.name, cmd);
         return Ok(("custom".to_string(), cmd.clone()));
     }
 
+    log::error!("no suitable installer found for package '{}'", pkg.name);
     Err(format!(
         "No suitable installer found for package '{}'",
         pkg.name
@@ -84,14 +93,17 @@ pub fn select_installer(
 
 pub fn is_installed(pkg: &ProfilePackage) -> bool {
     let Some(detect_cmd) = &pkg.detect else {
+        log::debug!("'{}': no detect command, assuming not installed", pkg.name);
         return false;
     };
-    Command::new("sh")
+    let result = Command::new("sh")
         .arg("-c")
         .arg(detect_cmd)
         .output()
         .map(|o| o.status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+    log::debug!("'{}': detect='{}' -> installed={}", pkg.name, detect_cmd, result);
+    result
 }
 
 fn topological_sort(packages: &[PackageRef]) -> Result<Vec<String>, String> {
@@ -133,6 +145,7 @@ fn topological_sort(packages: &[PackageRef]) -> Result<Vec<String>, String> {
         dfs(&pkg_ref.name, &mut visited, &mut in_stack, &mut order)?;
     }
 
+    log::debug!("topological install order: {:?}", order);
     Ok(order)
 }
 
@@ -142,7 +155,17 @@ pub fn run_install(
     cli_installer: &Option<String>,
     dry_run: bool,
 ) -> Result<(), String> {
+    log::info!(
+        "run_install: profile='{}', packages={}, force={}, dry_run={}, cli_installer={:?}",
+        profile.name,
+        profile.packages.len(),
+        force,
+        dry_run,
+        cli_installer
+    );
+
     if profile.packages.is_empty() {
+        log::info!("profile '{}' has no packages to install", profile.name);
         println!("{}", "No packages to install.".yellow());
         return Ok(());
     }
@@ -163,6 +186,7 @@ pub fn run_install(
         let pkg = match crate::registry::get_package_details(name) {
             Ok(p) => p,
             Err(e) => {
+                log::error!("failed to get details for '{}': {}", name, e);
                 eprintln!("{} {}: {}", "[fail]".red().bold(), name.cyan(), e);
                 failed_count += 1;
                 continue;
@@ -172,6 +196,7 @@ pub fn run_install(
         let display = pkg.display.as_deref().unwrap_or(&pkg.name);
 
         if !force && is_installed(&pkg) {
+            log::debug!("'{}' already installed, skipping", name);
             println!(
                 "{} {} — already installed",
                 "[skip]".yellow().bold(),
@@ -193,6 +218,7 @@ pub fn run_install(
             match select_installer(&pkg, &effective_installer) {
                 Ok(pair) => pair,
                 Err(e) => {
+                    log::error!("no installer for '{}': {}", name, e);
                     eprintln!(
                         "{} {}: {}",
                         "[fail]".red().bold(),
@@ -211,6 +237,7 @@ pub fn run_install(
         };
 
         if dry_run {
+            log::debug!("dry-run '{}': would run: {}", name, cmd_str);
             println!(
                 "{} {} — would run: {}",
                 "[dry-run]".cyan().bold(),
@@ -221,6 +248,7 @@ pub fn run_install(
             continue;
         }
 
+        log::info!("installing '{}' via {}: {}", name, installer_name, cmd_str);
         println!(
             "{} {} — {}",
             "[install]".blue().bold(),
@@ -232,10 +260,12 @@ pub fn run_install(
 
         match status {
             Ok(s) if s.success() => {
+                log::info!("'{}' installed successfully", name);
                 println!("{} {}", "[ok]".green().bold(), display.cyan());
                 installed_count += 1;
             }
             Ok(s) => {
+                log::error!("'{}' install failed: exit status {}", name, s);
                 eprintln!(
                     "{} {} — exited with status {}",
                     "[fail]".red().bold(),
@@ -245,6 +275,7 @@ pub fn run_install(
                 failed_count += 1;
             }
             Err(e) => {
+                log::error!("'{}' install command error: {}", name, e);
                 eprintln!(
                     "{} {} — {}",
                     "[fail]".red().bold(),
@@ -256,11 +287,14 @@ pub fn run_install(
         }
     }
 
-    let installed_label = if dry_run {
-        "would install"
-    } else {
-        "installed"
-    };
+    let installed_label = if dry_run { "would install" } else { "installed" };
+    log::info!(
+        "install complete: {} {}, {} skipped, {} failed",
+        installed_count,
+        installed_label,
+        skipped_count,
+        failed_count
+    );
     println!(
         "\n{} {} {}  {} skipped  {} failed",
         "Summary:".bold(),

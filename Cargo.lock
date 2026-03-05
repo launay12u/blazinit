@@ -109,6 +109,7 @@ dependencies = [
  "colored",
  "dirs-next",
  "include_dir",
+ "log",
  "predicates",
  "serde",
  "serial_test",

@@ -34,12 +34,16 @@ pub const PROFILE_DIRNAME: &str = "profiles";
 pub fn ensure_default_profile(profile_name: &str) -> Result<(), String> {
     let path = profile_path(profile_name);
     if !path.exists() {
+        log::debug!("default profile '{}' not found, creating it", profile_name);
         let profile = Profile {
             name: profile_name.to_string(),
             packages: Vec::new(),
         };
         let toml_str = toml::to_string(&profile).map_err(|e| e.to_string())?;
         fs::write(path, toml_str).map_err(|e| e.to_string())?;
+        log::info!("created default profile '{}'", profile_name);
+    } else {
+        log::debug!("default profile '{}' already exists", profile_name);
     }
     Ok(())
 }
@@ -52,17 +56,30 @@ pub fn profile_path(profile_name: &str) -> PathBuf {
 
 pub fn read_profile(profile_name: &str) -> Result<Profile, String> {
     let path = profile_path(profile_name);
+    log::debug!("reading profile '{}' from {:?}", profile_name, path);
     if !path.exists() {
+        log::error!("profile '{}' does not exist at {:?}", profile_name, path);
         return Err(format!("Profile '{}' does not exist.", profile_name));
     }
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let profile: Profile =
         toml::from_str(&content).map_err(|e| e.to_string())?;
+    log::debug!(
+        "profile '{}' loaded ({} packages)",
+        profile_name,
+        profile.packages.len()
+    );
     Ok(profile)
 }
 
 pub fn write_profile(profile: &Profile) -> Result<(), String> {
     let path = profile_path(&profile.name);
+    log::debug!(
+        "writing profile '{}' ({} packages) to {:?}",
+        profile.name,
+        profile.packages.len(),
+        path
+    );
     let toml_str = toml::to_string(profile).map_err(|e| e.to_string())?;
     fs::write(path, toml_str).map_err(|e| e.to_string())
 }
@@ -72,16 +89,20 @@ pub fn add_package_to_profile(
     package_name: &str,
     installer: Option<String>,
 ) -> Result<(), String> {
+    log::debug!("adding package '{}' to profile '{}' (installer={:?})", package_name, profile_name, installer);
     let mut profile = read_profile(profile_name)?;
 
     if profile.packages.iter().any(|p| p.name == package_name) {
+        log::warn!("package '{}' already present in profile '{}'", package_name, profile_name);
         return Err(format!(
             "Package '{}' is already present in profile '{}'",
             package_name, profile_name
         ));
     }
 
+    log::debug!("checking package '{}' in registry", package_name);
     if !crate::registry::is_package_in_registry(package_name)? {
+        log::error!("package '{}' not found in registry", package_name);
         return Err(format!(
             "Package '{}' not found in registry",
             package_name
@@ -95,6 +116,7 @@ pub fn add_package_to_profile(
     profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
     write_profile(&profile)?;
 
+    log::info!("added package '{}' to profile '{}'", package_name, profile_name);
     println!("Adding to profile {}:", profile_name.cyan().bold());
     println!("  {} {}", "+".green().bold(), package_name.cyan());
     println!("{}", "Successfully added 1 package.".green());
@@ -133,12 +155,14 @@ pub fn remove_package_from_profile(
     profile_name: &str,
     package_name: &str,
 ) -> Result<(), String> {
+    log::debug!("removing package '{}' from profile '{}'", package_name, profile_name);
     let mut profile = read_profile(profile_name)?;
 
     let initial_len = profile.packages.len();
     profile.packages.retain(|pkg| pkg.name != package_name);
 
     if profile.packages.len() == initial_len {
+        log::warn!("package '{}' not found in profile '{}'", package_name, profile_name);
         return Err(format!(
             "Package '{}' is not present in profile '{}'",
             package_name, profile_name
@@ -146,6 +170,7 @@ pub fn remove_package_from_profile(
     }
 
     write_profile(&profile)?;
+    log::info!("removed package '{}' from profile '{}'", package_name, profile_name);
     println!(
         "{} '{}' from profile '{}'",
         "Successfully removed".green(),
@@ -161,7 +186,9 @@ pub fn export_profile(
     file: &Option<String>,
 ) -> Result<(), String> {
     let src = profile_path(profile_name);
+    log::debug!("exporting profile '{}' from {:?}", profile_name, src);
     if !src.exists() {
+        log::error!("export failed: profile '{}' does not exist", profile_name);
         return Err(format!("Profile '{}' does not exist", profile_name));
     }
 
@@ -169,6 +196,7 @@ pub fn export_profile(
         Some(dest) => {
             fs::copy(&src, dest)
                 .map_err(|e| format!("Failed to export profile: {}", e))?;
+            log::info!("exported profile '{}' to '{}'", profile_name, dest);
             println!(
                 "{} '{}' exported to '{}'",
                 "Profile".green(),
@@ -177,6 +205,7 @@ pub fn export_profile(
             );
         }
         None => {
+            log::debug!("exporting profile '{}' to stdout", profile_name);
             let content = fs::read_to_string(&src)
                 .map_err(|e| format!("Failed to read profile: {}", e))?;
             print!("{}", content);
@@ -187,6 +216,7 @@ pub fn export_profile(
 }
 
 pub fn import_profile(file: &str) -> Result<(), String> {
+    log::debug!("importing profile from '{}'", file);
     let content = fs::read_to_string(file)
         .map_err(|e| format!("Failed to read file '{}': {}", file, e))?;
 
@@ -195,6 +225,7 @@ pub fn import_profile(file: &str) -> Result<(), String> {
 
     let dest = profile_path(&profile.name);
     if dest.exists() {
+        log::error!("import failed: profile '{}' already exists", profile.name);
         return Err(format!(
             "Profile '{}' already exists. Delete it first or rename the import file.",
             profile.name
@@ -204,6 +235,7 @@ pub fn import_profile(file: &str) -> Result<(), String> {
     fs::write(&dest, &content)
         .map_err(|e| format!("Failed to write profile: {}", e))?;
 
+    log::info!("imported profile '{}' from '{}'", profile.name, file);
     println!(
         "{} '{}'.",
         "Profile imported successfully:".green(),
@@ -218,14 +250,17 @@ pub fn install_profile(
     installer: &Option<String>,
     dry_run: bool,
 ) -> Result<(), String> {
+    log::info!("installing profile '{}' (force={}, dry_run={}, installer={:?})", profile_name, force, dry_run, installer);
     let profile = read_profile(profile_name)?;
     crate::installer::run_install(&profile, force, installer, dry_run)
 }
 
 pub fn create_profile(profile_name: &str) -> Result<(), String> {
     let path = profile_path(profile_name);
+    log::debug!("creating profile '{}' at {:?}", profile_name, path);
 
     if path.exists() {
+        log::warn!("create failed: profile '{}' already exists", profile_name);
         return Err(format!("Profile '{}' already exists", profile_name));
     }
 
@@ -236,6 +271,7 @@ pub fn create_profile(profile_name: &str) -> Result<(), String> {
 
     let toml_str = toml::to_string(&profile).map_err(|e| e.to_string())?;
     fs::write(path, toml_str).map_err(|e| e.to_string())?;
+    log::info!("profile '{}' created", profile_name);
     println!(
         "{} '{}'.",
         "Successfully created profile".green(),
@@ -248,6 +284,7 @@ pub fn create_profile(profile_name: &str) -> Result<(), String> {
 pub fn delete_profile(profile_name: &str) -> Result<(), String> {
     let default_profile = config::get_default_profile();
     if profile_name == default_profile {
+        log::error!("delete failed: '{}' is the default profile", profile_name);
         return Err(format!(
             "Cannot delete the default profile '{}'",
             default_profile
@@ -255,12 +292,15 @@ pub fn delete_profile(profile_name: &str) -> Result<(), String> {
     }
 
     let path = profile_path(profile_name);
+    log::debug!("deleting profile '{}' at {:?}", profile_name, path);
 
     if !path.exists() {
+        log::error!("delete failed: profile '{}' does not exist", profile_name);
         return Err(format!("Profile '{}' does not exist", profile_name));
     }
 
     fs::remove_file(path).map_err(|e| e.to_string())?;
+    log::info!("profile '{}' deleted", profile_name);
     println!(
         "{} '{}'.",
         "Successfully deleted profile".green(),

@@ -31,6 +31,7 @@ fn invalidate_registry_cache() {
 }
 
 fn copy_bundled_registry() -> Result<(), String> {
+    log::debug!("copying bundled registry assets to {:?}", registry_dir());
     let bundled_dir = ASSETS.get_dir(REGISTRY_DIRNAME).ok_or_else(|| {
         format!(
             "Bundled registry directory '{}' not found",
@@ -42,6 +43,7 @@ fn copy_bundled_registry() -> Result<(), String> {
     fs::create_dir_all(&target_dir)
         .map_err(|e| format!("Failed to create registry directory: {}", e))?;
 
+    let mut count = 0usize;
     for file in bundled_dir.files() {
         let filename = file
             .path()
@@ -51,8 +53,10 @@ fn copy_bundled_registry() -> Result<(), String> {
         fs::write(&target_path, file.contents()).map_err(|e| {
             format!("Failed to write registry file {:?}: {}", filename, e)
         })?;
+        count += 1;
     }
 
+    log::info!("bundled registry copied ({} files)", count);
     invalidate_registry_cache();
     Ok(())
 }
@@ -65,7 +69,10 @@ pub fn ensure_registry() -> Result<(), String> {
             .unwrap_or(true);
 
     if needs_init {
+        log::info!("registry not found or empty, initializing from bundled assets");
         copy_bundled_registry()?;
+    } else {
+        log::debug!("registry already initialized at {:?}", dir);
     }
 
     Ok(())
@@ -73,11 +80,13 @@ pub fn ensure_registry() -> Result<(), String> {
 
 fn read_registry_from_disk() -> Result<toml::Value, String> {
     let dir = registry_dir();
+    log::debug!("reading registry from disk at {:?}", dir);
     let mut packages = Table::new();
 
     let entries = fs::read_dir(&dir)
         .map_err(|e| format!("Failed to read registry directory: {}", e))?;
 
+    let mut count = 0usize;
     for entry in entries {
         let entry = entry
             .map_err(|e| format!("Failed to read directory entry: {}", e))?;
@@ -101,8 +110,10 @@ fn read_registry_from_disk() -> Result<toml::Value, String> {
         })?;
 
         packages.insert(stem.to_string(), value);
+        count += 1;
     }
 
+    log::debug!("registry loaded from disk: {} packages", count);
     let mut root = Table::new();
     root.insert("package".to_string(), toml::Value::Table(packages));
     Ok(toml::Value::Table(root))
@@ -116,9 +127,11 @@ pub fn read_registry() -> Result<toml::Value, String> {
             if let Some((ref cached_dir, ref v)) = *borrow
                 && cached_dir == &dir
             {
+                log::debug!("registry cache hit for {:?}", dir);
                 return Ok(v.clone());
             }
         }
+        log::debug!("registry cache miss, loading from disk");
         let val = read_registry_from_disk()?;
         *cache.borrow_mut() = Some((dir, val.clone()));
         Ok(val)
@@ -133,18 +146,23 @@ fn get_packages_table(registry: &toml::Value) -> Result<&toml::Table, String> {
 }
 
 pub fn is_package_in_registry(package_name: &str) -> Result<bool, String> {
+    log::debug!("checking if '{}' is in registry", package_name);
     let registry = read_registry()?;
     let packages = get_packages_table(&registry)?;
 
     if packages.contains_key(package_name) {
+        log::debug!("package '{}' found in registry", package_name);
         return Ok(true);
     }
 
+    log::debug!("package '{}' not found, refreshing from bundled assets", package_name);
     copy_bundled_registry()?;
     let registry = read_registry()?;
     let packages = get_packages_table(&registry)?;
 
-    Ok(packages.contains_key(package_name))
+    let found = packages.contains_key(package_name);
+    log::debug!("package '{}' in registry after refresh: {}", package_name, found);
+    Ok(found)
 }
 
 pub fn list_packages(query: &Option<String>) -> Result<(), String> {
@@ -193,6 +211,7 @@ pub fn list_packages(query: &Option<String>) -> Result<(), String> {
 }
 
 fn get_raw_package_table(package_name: &str) -> Result<Table, String> {
+    log::debug!("fetching raw table for package '{}'", package_name);
     let lookup = |registry: &toml::Value| -> Option<Table> {
         get_packages_table(registry)
             .ok()?
@@ -206,9 +225,11 @@ fn get_raw_package_table(package_name: &str) -> Result<Table, String> {
         return Ok(table);
     }
 
+    log::debug!("package '{}' not found, refreshing from bundled assets", package_name);
     copy_bundled_registry()?;
     let registry = read_registry()?;
     lookup(&registry).ok_or_else(|| {
+        log::error!("package '{}' not found in registry after refresh", package_name);
         format!("Package '{}' not found in registry", package_name)
     })
 }
@@ -216,6 +237,7 @@ fn get_raw_package_table(package_name: &str) -> Result<Table, String> {
 pub fn get_package_details(
     package_name: &str,
 ) -> Result<profile::ProfilePackage, String> {
+    log::debug!("getting details for package '{}'", package_name);
     let package_table = get_raw_package_table(package_name)?;
 
     let display = package_table
@@ -240,6 +262,13 @@ pub fn get_package_details(
 
     let dependencies = get_dependencies(package_name)?;
 
+    log::debug!(
+        "package '{}': display={:?}, installers={}, deps={}",
+        package_name,
+        display,
+        installers.len(),
+        dependencies.len()
+    );
     Ok(profile::ProfilePackage {
         name: package_name.to_string(),
         display,
@@ -280,6 +309,7 @@ pub fn get_dependencies(package_name: &str) -> Result<Vec<String>, String> {
 
 fn is_registry_stale() -> bool {
     let Ok(meta) = metadata_path().metadata() else {
+        log::debug!("registry metadata not found, treating as stale");
         return true;
     };
     let Ok(modified) = meta.modified() else {
@@ -288,16 +318,17 @@ fn is_registry_stale() -> bool {
     let Ok(elapsed) = modified.elapsed() else {
         return true;
     };
-    elapsed.as_secs() > 86400
-}
-
-pub fn update_registry() -> Result<(), String> {
-    update_registry_inner(false)
+    let stale = elapsed.as_secs() > 86400;
+    log::debug!("registry age: {}s, stale={}", elapsed.as_secs(), stale);
+    stale
 }
 
 pub fn try_update_registry_silent() {
     if is_registry_stale() {
+        log::info!("registry is stale, running silent background update");
         let _ = update_registry_inner(true);
+    } else {
+        log::debug!("registry is fresh, skipping update");
     }
 }
 
@@ -305,14 +336,17 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
     let base_url = crate::config::get_registry_url();
     let metadata_url = format!("{}/{}", base_url, METADATA_FILENAME);
 
+    log::info!("fetching registry metadata from {}", metadata_url);
     let remote_body = match ureq::get(&metadata_url).call() {
         Ok(r) => r.into_string().map_err(|e| {
             format!("Failed to read registry metadata response: {}", e)
         })?,
         Err(e) => {
             if silent {
+                log::warn!("silent registry update failed: {}", e);
                 return Ok(());
             }
+            log::error!("failed to fetch registry metadata: {}", e);
             return Err(format!("Failed to fetch registry metadata: {}", e));
         }
     };
@@ -333,6 +367,8 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
+    log::debug!("remote registry version={}, packages={}", remote_version, remote_packages.len());
+
     let local_meta_path = metadata_path();
     if local_meta_path.exists() {
         let local_body = fs::read_to_string(&local_meta_path)
@@ -341,6 +377,7 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
             && local_meta.get("version").and_then(|v| v.as_str())
                 == Some(remote_version)
         {
+            log::info!("registry already at version {}, skipping update", remote_version);
             if !silent {
                 println!(
                     "{} (version {}).",
@@ -356,8 +393,10 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
     fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create registry directory: {}", e))?;
 
+    let mut fetched = 0usize;
     for pkg_name in &remote_packages {
         let pkg_url = format!("{}/{}.toml", base_url, pkg_name);
+        log::debug!("fetching package '{}' from {}", pkg_name, pkg_url);
         match ureq::get(&pkg_url).call() {
             Ok(response) => {
                 let content = response.into_string().map_err(|e| {
@@ -367,8 +406,10 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
                 fs::write(&dest, &content).map_err(|e| {
                     format!("Failed to write package '{}': {}", pkg_name, e)
                 })?;
+                fetched += 1;
             }
             Err(e) => {
+                log::warn!("failed to fetch package '{}': {}", pkg_name, e);
                 eprintln!(
                     "{} failed to fetch package '{}': {}",
                     "Warning:".yellow().bold(),
@@ -384,6 +425,7 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
 
     invalidate_registry_cache();
 
+    log::info!("registry updated to version {} ({}/{} packages)", remote_version, fetched, remote_packages.len());
     println!(
         "{} version {} ({} packages).",
         "Registry updated to".green(),
@@ -394,6 +436,7 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
 }
 
 pub fn add_custom_package(file: &str) -> Result<(), String> {
+    log::debug!("adding custom package from '{}'", file);
     let content = fs::read_to_string(file)
         .map_err(|e| format!("Failed to read file '{}': {}", file, e))?;
 
@@ -411,6 +454,7 @@ pub fn add_custom_package(file: &str) -> Result<(), String> {
 
     invalidate_registry_cache();
 
+    log::info!("custom package added from '{}' -> {:?}", file, dest);
     println!(
         "{} from '{}'.",
         "Package added to registry".green(),

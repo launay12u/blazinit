@@ -41,11 +41,15 @@ impl Default for Config {
 }
 
 pub fn get_preferred_installer() -> Option<String> {
-    read_config().preferred_installer
+    let val = read_config().preferred_installer;
+    log::debug!("preferred_installer={:?}", val);
+    val
 }
 
 pub fn get_registry_url() -> String {
-    read_config().registry_url
+    let url = read_config().registry_url;
+    log::debug!("registry_url={}", url);
+    url
 }
 
 fn config_file_path() -> PathBuf {
@@ -55,9 +59,10 @@ fn config_file_path() -> PathBuf {
 fn read_config() -> Config {
     let path = config_file_path();
     if !path.exists() {
+        log::debug!("config file not found at {:?}, using defaults", path);
         return Config::default();
     }
-
+    log::debug!("reading config from {:?}", path);
     let content = fs::read_to_string(path).unwrap_or_default();
     toml::from_str(&content).unwrap_or_default()
 }
@@ -69,6 +74,7 @@ pub fn get_default_profile() -> String {
 pub fn set_default_profile(profile_name: &str) -> Result<(), String> {
     let profile_path = crate::profile::profile_path(profile_name);
     if !profile_path.exists() {
+        log::error!("set_default_profile: profile '{}' does not exist", profile_name);
         return Err(format!("Profile '{}' does not exist.", profile_name));
     }
 
@@ -78,6 +84,7 @@ pub fn set_default_profile(profile_name: &str) -> Result<(), String> {
     let toml_str = toml::to_string(&config).map_err(|e| e.to_string())?;
     fs::write(config_file_path(), toml_str).map_err(|e| e.to_string())?;
 
+    log::info!("default profile set to '{}'", profile_name);
     println!(
         "{} '{}'.",
         "Default profile set to".green(),
@@ -101,13 +108,21 @@ pub fn profiles_dir() -> PathBuf {
 
 pub fn bootstrap_config() -> Result<(), String> {
     let base = config_dir();
+    log::debug!("bootstrap: config dir = {:?}", base);
     fs::create_dir_all(&base)
         .map_err(|e| format!("Failed to create config dir: {}", e))?;
 
-    ensure_default_profile(&get_default_profile())?;
+    let default = get_default_profile();
+    log::debug!("bootstrap: ensuring default profile '{}'", default);
+    ensure_default_profile(&default)?;
+
+    log::debug!("bootstrap: ensuring registry");
     ensure_registry()?;
+
+    log::debug!("bootstrap: checking for silent registry update");
     crate::registry::try_update_registry_silent();
 
+    log::debug!("bootstrap: complete");
     Ok(())
 }
 
