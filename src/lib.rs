@@ -4,6 +4,7 @@ pub mod installer;
 pub mod logging;
 pub mod profile;
 pub mod registry;
+pub mod updater;
 
 fn resolve_profile_name(profile_arg: &Option<String>) -> String {
     profile_arg
@@ -86,6 +87,10 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
                 registry::list_packages(query)?;
             }
         },
+
+        cli::Commands::SelfUpdate { check } => {
+            updater::self_update(*check)?;
+        }
     }
 
     let _ = update_handle.join();
