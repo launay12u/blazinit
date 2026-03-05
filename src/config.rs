@@ -106,6 +106,7 @@ pub fn bootstrap_config() -> Result<(), String> {
 
     ensure_default_profile(&get_default_profile())?;
     ensure_registry()?;
+    crate::registry::try_update_registry_silent();
 
     Ok(())
 }

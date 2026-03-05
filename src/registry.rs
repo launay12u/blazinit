@@ -254,16 +254,28 @@ pub fn get_dependencies(package_name: &str) -> Result<Vec<String>, String> {
 }
 
 pub fn update_registry() -> Result<(), String> {
+    update_registry_inner(false)
+}
+
+pub fn try_update_registry_silent() {
+    let _ = update_registry_inner(true);
+}
+
+fn update_registry_inner(silent: bool) -> Result<(), String> {
     let base_url = crate::config::get_registry_url();
     let metadata_url = format!("{}/{}", base_url, METADATA_FILENAME);
 
-    let remote_body = ureq::get(&metadata_url)
-        .call()
-        .map_err(|e| format!("Failed to fetch registry metadata: {}", e))?
-        .into_string()
-        .map_err(|e| {
+    let remote_body = match ureq::get(&metadata_url).call() {
+        Ok(r) => r.into_string().map_err(|e| {
             format!("Failed to read registry metadata response: {}", e)
-        })?;
+        })?,
+        Err(e) => {
+            if silent {
+                return Ok(());
+            }
+            return Err(format!("Failed to fetch registry metadata: {}", e));
+        }
+    };
 
     let remote_meta: toml::Value = toml::from_str(&remote_body)
         .map_err(|e| format!("Failed to parse remote metadata: {}", e))?;
@@ -289,11 +301,13 @@ pub fn update_registry() -> Result<(), String> {
             && local_meta.get("version").and_then(|v| v.as_str())
                 == Some(remote_version)
         {
-            println!(
-                "{} (version {}).",
-                "Registry is already up to date".green(),
-                remote_version.bold()
-            );
+            if !silent {
+                println!(
+                    "{} (version {}).",
+                    "Registry is already up to date".green(),
+                    remote_version.bold()
+                );
+            }
             return Ok(());
         }
     }
