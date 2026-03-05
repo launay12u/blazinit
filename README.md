@@ -2,98 +2,150 @@
 
 [![CI](https://github.com/launay12u/blazinit/actions/workflows/ci.yml/badge.svg)](https://github.com/launay12u/blazinit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](https://github.com/launay12u/blazinit/releases)
+[![Latest Release](https://img.shields.io/github/v/release/launay12u/blazinit)](https://github.com/launay12u/blazinit/releases/latest)
 
 Blazing fast CLI tool written in Rust for managing reproducible software installation profiles. Create profiles once, and install all your essential tools on any machine with a single command.
 
-## 🚀 Features
+## Features
 
-- **Profile Management**: Create, delete, and list software profiles.
-- **Dependency Tracking**: Add or remove software identifiers from specific profiles.
-- **Single-Command Install**: Install all software defined in a profile at once.
-- **Portability**: Export and import profiles as TOML files for easy sharing.
-- **Cross-Platform**: Works seamlessly on Linux, macOS, and Windows.
+- **Profile Management** — Create, delete, and list software profiles
+- **Dependency Tracking** — Add or remove packages from specific profiles
+- **Single-Command Install** — Install everything in a profile at once
+- **Portability** — Export and import profiles as TOML files
+- **Cross-Platform** — Linux, macOS, and Windows
+- **Auto-updating Registry** — Package registry stays up to date automatically
 
-## 📦 Installation
+## Installation
 
-### From Source
+### Linux & macOS
 
-Ensure you have [Rust](https://www.rust-lang.org/) installed, then:
+```sh
+curl -fsSL https://raw.githubusercontent.com/launay12u/blazinit/main/install.sh | sh
+```
 
-```bash
+Installs to `/usr/local/bin` by default. Override with:
+
+```sh
+BLAZINIT_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/launay12u/blazinit/main/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/launay12u/blazinit/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\blazinit\bin` and adds it to your user PATH.
+
+### Manual download
+
+Download the binary for your platform from the [latest release](https://github.com/launay12u/blazinit/releases/latest):
+
+| Platform | Binary |
+|---|---|
+| Linux x86_64 | `blazinit-x86_64-unknown-linux-gnu` |
+| macOS Apple Silicon | `blazinit-aarch64-apple-darwin` |
+| macOS Intel | `blazinit-x86_64-apple-darwin` |
+| Windows x64 | `blazinit-x86_64-pc-windows-msvc.exe` |
+
+### From source
+
+Requires [Rust](https://www.rust-lang.org/tools/install):
+
+```sh
 git clone https://github.com/launay12u/blazinit.git
 cd blazinit
 cargo install --path .
 ```
 
-## 🛠️ Usage
+### Update
 
-### Quick Start
-
-1.  **Add software** to your default profile:
-    ```bash
-    blazinit add rustup
-    blazinit add neovim
-    ```
-
-2.  **List** your current profile:
-    ```bash
-    blazinit show
-    ```
-
-3.  **Install** everything:
-    ```bash
-    blazinit install
-    ```
-
-### Managing Profiles
-
-- **Create a new profile**:
-  ```bash
-  blazinit create work
-  ```
-
-- **Add software to a specific profile**:
-  ```bash
-  blazinit add docker work
-  ```
-
-- **List all profiles**:
-  ```bash
-  blazinit list
-  ```
-
-- **Export/Import**:
-  ```bash
-  blazinit export work work-profile.toml
-  blazinit import work-profile.toml
-  ```
-
-## ⚙️ Configuration
-
-Blazinit stores its configuration and profiles in your platform's standard config directory:
-
-- **Linux**: `~/.config/blazinit/`
-- **macOS**: `~/Library/Application Support/blazinit/`
-- **Windows**: `C:\Users\User\AppData\Roaming\blazinit\config\`
-
-Profiles are stored as TOML files in the `profiles/` subdirectory.
-
-## 🤝 Contributing
-
-We welcome contributions! Please ensure your code passes the quality checks:
-
-```bash
-# Run all quality checks
-just quality-check
-
-# Run tests
-just test
-
-# Automatically format code
-just quality-format
+```sh
+blazinit self-update
 ```
 
-## 📄 License
+## Usage
 
-This project is licensed under the MIT License - see the [LICENCE.md](LICENCE.md) file for details.
+### Quick start
+
+```sh
+# Add packages to your default profile
+blazinit add git
+blazinit add neovim
+blazinit add docker
+
+# Preview what would be installed
+blazinit install --dry-run
+
+# Install everything
+blazinit install
+```
+
+### Profiles
+
+```sh
+# Create a named profile
+blazinit create work
+
+# Add packages to it
+blazinit add docker work
+blazinit add kubectl work
+
+# Show its contents
+blazinit show work
+
+# Install it
+blazinit install work
+
+# Set it as default
+blazinit set-default work
+
+# List all profiles
+blazinit list
+```
+
+### Export & import
+
+```sh
+# Export to a file (or stdout if no file given)
+blazinit export work work.toml
+
+# Import on another machine
+blazinit import work.toml
+```
+
+### Registry
+
+```sh
+# Search available packages
+blazinit registry list
+blazinit registry list docker
+
+# Add a custom package
+blazinit registry add ./my-package.toml
+```
+
+## Configuration
+
+Blazinit stores its data in your platform's standard config directory:
+
+| OS | Path |
+|---|---|
+| Linux | `~/.config/blazinit/` |
+| macOS | `~/Library/Application Support/blazinit/` |
+| Windows | `%APPDATA%\blazinit\` |
+
+Profiles are stored as TOML files under `profiles/`. The package registry is under `registry/` and updates automatically in the background on every run.
+
+## Contributing
+
+```sh
+just quality-check   # fmt + clippy + type check
+just test            # run test suite
+just quality-format  # auto-fix formatting
+just bump patch      # release a new version
+```
+
+## License
+
+MIT — see [LICENCE.md](LICENCE.md)
