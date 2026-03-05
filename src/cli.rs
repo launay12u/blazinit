@@ -128,13 +128,4 @@ pub enum RegistryCommands {
         #[arg(help = "Optional search query to filter packages")]
         query: Option<String>,
     },
-
-    #[command(about = "Update registry from remote")]
-    Update,
-
-    #[command(about = "Add a custom package from a TOML file")]
-    Add {
-        #[arg(help = "Path to the package TOML file")]
-        file: String,
-    },
 }
