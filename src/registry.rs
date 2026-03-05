@@ -307,29 +307,9 @@ pub fn get_dependencies(package_name: &str) -> Result<Vec<String>, String> {
     Ok(Vec::new())
 }
 
-fn is_registry_stale() -> bool {
-    let Ok(meta) = metadata_path().metadata() else {
-        log::debug!("registry metadata not found, treating as stale");
-        return true;
-    };
-    let Ok(modified) = meta.modified() else {
-        return true;
-    };
-    let Ok(elapsed) = modified.elapsed() else {
-        return true;
-    };
-    let stale = elapsed.as_secs() > 86400;
-    log::debug!("registry age: {}s, stale={}", elapsed.as_secs(), stale);
-    stale
-}
-
 pub fn try_update_registry_silent() {
-    if is_registry_stale() {
-        log::info!("registry is stale, running silent background update");
-        let _ = update_registry_inner(true);
-    } else {
-        log::debug!("registry is fresh, skipping update");
-    }
+    log::debug!("checking remote registry for updates");
+    let _ = update_registry_inner(true);
 }
 
 fn update_registry_inner(silent: bool) -> Result<(), String> {
