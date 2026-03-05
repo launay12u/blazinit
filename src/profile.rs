@@ -34,7 +34,10 @@ pub const PROFILE_DIRNAME: &str = "profiles";
 pub fn ensure_default_profile(profile_name: &str) -> Result<(), String> {
     let path = profile_path(profile_name);
     if !path.exists() {
-        log::debug!("default profile '{}' not found, creating it", profile_name);
+        log::debug!(
+            "default profile '{}' not found, creating it",
+            profile_name
+        );
         let profile = Profile {
             name: profile_name.to_string(),
             packages: Vec::new(),
@@ -89,11 +92,20 @@ pub fn add_package_to_profile(
     package_name: &str,
     installer: Option<String>,
 ) -> Result<(), String> {
-    log::debug!("adding package '{}' to profile '{}' (installer={:?})", package_name, profile_name, installer);
+    log::debug!(
+        "adding package '{}' to profile '{}' (installer={:?})",
+        package_name,
+        profile_name,
+        installer
+    );
     let mut profile = read_profile(profile_name)?;
 
     if profile.packages.iter().any(|p| p.name == package_name) {
-        log::warn!("package '{}' already present in profile '{}'", package_name, profile_name);
+        log::warn!(
+            "package '{}' already present in profile '{}'",
+            package_name,
+            profile_name
+        );
         return Err(format!(
             "Package '{}' is already present in profile '{}'",
             package_name, profile_name
@@ -116,7 +128,11 @@ pub fn add_package_to_profile(
     profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
     write_profile(&profile)?;
 
-    log::info!("added package '{}' to profile '{}'", package_name, profile_name);
+    log::info!(
+        "added package '{}' to profile '{}'",
+        package_name,
+        profile_name
+    );
     println!("Adding to profile {}:", profile_name.cyan().bold());
     println!("  {} {}", "+".green().bold(), package_name.cyan());
     println!("{}", "Successfully added 1 package.".green());
@@ -155,14 +171,22 @@ pub fn remove_package_from_profile(
     profile_name: &str,
     package_name: &str,
 ) -> Result<(), String> {
-    log::debug!("removing package '{}' from profile '{}'", package_name, profile_name);
+    log::debug!(
+        "removing package '{}' from profile '{}'",
+        package_name,
+        profile_name
+    );
     let mut profile = read_profile(profile_name)?;
 
     let initial_len = profile.packages.len();
     profile.packages.retain(|pkg| pkg.name != package_name);
 
     if profile.packages.len() == initial_len {
-        log::warn!("package '{}' not found in profile '{}'", package_name, profile_name);
+        log::warn!(
+            "package '{}' not found in profile '{}'",
+            package_name,
+            profile_name
+        );
         return Err(format!(
             "Package '{}' is not present in profile '{}'",
             package_name, profile_name
@@ -170,7 +194,11 @@ pub fn remove_package_from_profile(
     }
 
     write_profile(&profile)?;
-    log::info!("removed package '{}' from profile '{}'", package_name, profile_name);
+    log::info!(
+        "removed package '{}' from profile '{}'",
+        package_name,
+        profile_name
+    );
     println!(
         "{} '{}' from profile '{}'",
         "Successfully removed".green(),
@@ -252,7 +280,13 @@ pub fn install_profile(
     installer: &Option<String>,
     dry_run: bool,
 ) -> Result<(), String> {
-    log::info!("installing profile '{}' (force={}, dry_run={}, installer={:?})", profile_name, force, dry_run, installer);
+    log::info!(
+        "installing profile '{}' (force={}, dry_run={}, installer={:?})",
+        profile_name,
+        force,
+        dry_run,
+        installer
+    );
     let profile = read_profile(profile_name)?;
     crate::installer::run_install(&profile, force, installer, dry_run)
 }

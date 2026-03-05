@@ -122,10 +122,7 @@ pub enum Commands {
 
     #[command(about = "Update blazinit to the latest release")]
     SelfUpdate {
-        #[arg(
-            long,
-            help = "Check for a newer version without downloading it"
-        )]
+        #[arg(long, help = "Check for a newer version without downloading it")]
         check: bool,
     },
 }

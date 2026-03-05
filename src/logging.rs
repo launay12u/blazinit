@@ -91,10 +91,8 @@ pub fn init_logger() {
         let log_dir = crate::config::config_dir();
         if fs::create_dir_all(&log_dir).is_ok() {
             let log_path = log_dir.join("blazinit.log");
-            if let Ok(file) = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_path)
+            if let Ok(file) =
+                OpenOptions::new().create(true).append(true).open(&log_path)
             {
                 log::set_boxed_logger(Box::new(FileLogger {
                     file: Mutex::new(file),

@@ -46,16 +46,29 @@ pub fn select_installer(
     // 1. CLI flag
     if let Some(name) = installer_flag {
         if let Some(value) = pkg.installers.get(name.as_str()) {
-            log::debug!("installer for '{}': cli flag '{}' -> '{}'", pkg.name, name, value);
+            log::debug!(
+                "installer for '{}': cli flag '{}' -> '{}'",
+                pkg.name,
+                name,
+                value
+            );
             return Ok((name.clone(), value.clone()));
         }
         if name == "custom"
             && let Some(cmd) = pkg.installers.get("custom")
         {
-            log::debug!("installer for '{}': cli flag 'custom' -> '{}'", pkg.name, cmd);
+            log::debug!(
+                "installer for '{}': cli flag 'custom' -> '{}'",
+                pkg.name,
+                cmd
+            );
             return Ok(("custom".to_string(), cmd.clone()));
         }
-        log::error!("installer '{}' not available for package '{}'", name, pkg.name);
+        log::error!(
+            "installer '{}' not available for package '{}'",
+            name,
+            pkg.name
+        );
         return Err(format!(
             "Installer '{}' not available for package '{}'",
             name, pkg.name
@@ -66,7 +79,12 @@ pub fn select_installer(
     if let Some(name) = crate::config::get_preferred_installer()
         && let Some(value) = pkg.installers.get(name.as_str())
     {
-        log::debug!("installer for '{}': config preferred '{}' -> '{}'", pkg.name, name, value);
+        log::debug!(
+            "installer for '{}': config preferred '{}' -> '{}'",
+            pkg.name,
+            name,
+            value
+        );
         return Ok((name, value.clone()));
     }
 
@@ -74,13 +92,22 @@ pub fn select_installer(
     if let Some(detected) = detect_available_installer()
         && let Some(value) = pkg.installers.get(detected.as_str())
     {
-        log::debug!("installer for '{}': auto-detected '{}' -> '{}'", pkg.name, detected, value);
+        log::debug!(
+            "installer for '{}': auto-detected '{}' -> '{}'",
+            pkg.name,
+            detected,
+            value
+        );
         return Ok((detected, value.clone()));
     }
 
     // 4. Fall back to custom
     if let Some(cmd) = pkg.installers.get("custom") {
-        log::debug!("installer for '{}': fallback custom -> '{}'", pkg.name, cmd);
+        log::debug!(
+            "installer for '{}': fallback custom -> '{}'",
+            pkg.name,
+            cmd
+        );
         return Ok(("custom".to_string(), cmd.clone()));
     }
 
@@ -93,7 +120,10 @@ pub fn select_installer(
 
 pub fn is_installed(pkg: &ProfilePackage) -> bool {
     let Some(detect_cmd) = &pkg.detect else {
-        log::debug!("'{}': no detect command, assuming not installed", pkg.name);
+        log::debug!(
+            "'{}': no detect command, assuming not installed",
+            pkg.name
+        );
         return false;
     };
     let result = Command::new("sh")
@@ -102,7 +132,12 @@ pub fn is_installed(pkg: &ProfilePackage) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
-    log::debug!("'{}': detect='{}' -> installed={}", pkg.name, detect_cmd, result);
+    log::debug!(
+        "'{}': detect='{}' -> installed={}",
+        pkg.name,
+        detect_cmd,
+        result
+    );
     result
 }
 
@@ -287,7 +322,11 @@ pub fn run_install(
         }
     }
 
-    let installed_label = if dry_run { "would install" } else { "installed" };
+    let installed_label = if dry_run {
+        "would install"
+    } else {
+        "installed"
+    };
     log::info!(
         "install complete: {} {}, {} skipped, {} failed",
         installed_count,

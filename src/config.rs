@@ -70,7 +70,10 @@ pub fn get_default_profile() -> String {
 pub fn set_default_profile(profile_name: &str) -> Result<(), String> {
     let profile_path = crate::profile::profile_path(profile_name);
     if !profile_path.exists() {
-        log::error!("set_default_profile: profile '{}' does not exist", profile_name);
+        log::error!(
+            "set_default_profile: profile '{}' does not exist",
+            profile_name
+        );
         return Err(format!("Profile '{}' does not exist.", profile_name));
     }
 

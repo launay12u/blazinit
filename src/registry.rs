@@ -69,7 +69,9 @@ pub fn ensure_registry() -> Result<(), String> {
             .unwrap_or(true);
 
     if needs_init {
-        log::info!("registry not found or empty, initializing from bundled assets");
+        log::info!(
+            "registry not found or empty, initializing from bundled assets"
+        );
         copy_bundled_registry()?;
     } else {
         log::debug!("registry already initialized at {:?}", dir);
@@ -214,11 +216,17 @@ fn get_raw_package_table(package_name: &str) -> Result<Table, String> {
         return Ok(table);
     }
 
-    log::debug!("package '{}' not found, refreshing from bundled assets", package_name);
+    log::debug!(
+        "package '{}' not found, refreshing from bundled assets",
+        package_name
+    );
     copy_bundled_registry()?;
     let registry = read_registry()?;
     lookup(&registry).ok_or_else(|| {
-        log::error!("package '{}' not found in registry after refresh", package_name);
+        log::error!(
+            "package '{}' not found in registry after refresh",
+            package_name
+        );
         format!("Package '{}' not found in registry", package_name)
     })
 }
@@ -336,7 +344,11 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    log::debug!("remote registry version={}, packages={}", remote_version, remote_packages.len());
+    log::debug!(
+        "remote registry version={}, packages={}",
+        remote_version,
+        remote_packages.len()
+    );
 
     let local_meta_path = metadata_path();
     if local_meta_path.exists() {
@@ -346,7 +358,10 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
             && local_meta.get("version").and_then(|v| v.as_str())
                 == Some(remote_version)
         {
-            log::info!("registry already at version {}, skipping update", remote_version);
+            log::info!(
+                "registry already at version {}, skipping update",
+                remote_version
+            );
             if !silent {
                 println!(
                     "{} (version {}).",
@@ -394,7 +409,12 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
 
     invalidate_registry_cache();
 
-    log::info!("registry updated to version {} ({}/{} packages)", remote_version, fetched, remote_packages.len());
+    log::info!(
+        "registry updated to version {} ({}/{} packages)",
+        remote_version,
+        fetched,
+        remote_packages.len()
+    );
     println!(
         "{} version {} ({} packages).",
         "Registry updated to".green(),
@@ -706,7 +726,6 @@ apt = "git"
         assert!(!result.unwrap());
     }
 
-
     #[test]
     #[serial]
     fn test_get_dependencies_with_deps() {
@@ -818,5 +837,4 @@ apt = "git"
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("Failed to read file"));
     }
-
 }

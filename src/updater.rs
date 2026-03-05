@@ -71,15 +71,12 @@ pub fn self_update(check_only: bool) -> Result<(), String> {
     );
 
     if check_only {
-        println!(
-            "Run {} to install it.",
-            "blazinit self-update".cyan()
-        );
+        println!("Run {} to install it.", "blazinit self-update".cyan());
         return Ok(());
     }
 
-    let target =
-        current_target().ok_or("Self-update is not supported on this platform.")?;
+    let target = current_target()
+        .ok_or("Self-update is not supported on this platform.")?;
 
     let asset_name = if cfg!(windows) {
         format!("blazinit-{}.exe", target)
