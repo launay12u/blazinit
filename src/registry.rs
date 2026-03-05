@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{cell::RefCell, collections::HashMap, fs, path::PathBuf};
 
 use colored::Colorize;
 use toml::Table;
@@ -13,6 +13,21 @@ const METADATA_FILENAME: &str = "metadata.toml";
 
 fn registry_dir() -> PathBuf {
     config_dir().join(REGISTRY_DIRNAME)
+}
+
+fn metadata_path() -> PathBuf {
+    registry_dir().join(METADATA_FILENAME)
+}
+
+// Cache keyed by path so test env changes (HOME override) are handled
+// correctly.
+thread_local! {
+    static REGISTRY_CACHE: RefCell<Option<(PathBuf, toml::Value)>> =
+        const { RefCell::new(None) };
+}
+
+fn invalidate_registry_cache() {
+    REGISTRY_CACHE.with(|c| *c.borrow_mut() = None);
 }
 
 fn copy_bundled_registry() -> Result<(), String> {
@@ -38,6 +53,7 @@ fn copy_bundled_registry() -> Result<(), String> {
         })?;
     }
 
+    invalidate_registry_cache();
     Ok(())
 }
 
@@ -55,7 +71,7 @@ pub fn ensure_registry() -> Result<(), String> {
     Ok(())
 }
 
-pub fn read_registry() -> Result<toml::Value, String> {
+fn read_registry_from_disk() -> Result<toml::Value, String> {
     let dir = registry_dir();
     let mut packages = Table::new();
 
@@ -92,12 +108,33 @@ pub fn read_registry() -> Result<toml::Value, String> {
     Ok(toml::Value::Table(root))
 }
 
-pub fn is_package_in_registry(package_name: &str) -> Result<bool, String> {
-    let registry = read_registry()?;
-    let packages = registry
+pub fn read_registry() -> Result<toml::Value, String> {
+    let dir = registry_dir();
+    REGISTRY_CACHE.with(|cache| {
+        {
+            let borrow = cache.borrow();
+            if let Some((ref cached_dir, ref v)) = *borrow
+                && cached_dir == &dir
+            {
+                return Ok(v.clone());
+            }
+        }
+        let val = read_registry_from_disk()?;
+        *cache.borrow_mut() = Some((dir, val.clone()));
+        Ok(val)
+    })
+}
+
+fn get_packages_table(registry: &toml::Value) -> Result<&toml::Table, String> {
+    registry
         .get("package")
         .and_then(|p| p.as_table())
-        .ok_or("Registry is missing the '[package]' table")?;
+        .ok_or_else(|| "Registry is missing the '[package]' table".to_string())
+}
+
+pub fn is_package_in_registry(package_name: &str) -> Result<bool, String> {
+    let registry = read_registry()?;
+    let packages = get_packages_table(&registry)?;
 
     if packages.contains_key(package_name) {
         return Ok(true);
@@ -105,20 +142,14 @@ pub fn is_package_in_registry(package_name: &str) -> Result<bool, String> {
 
     copy_bundled_registry()?;
     let registry = read_registry()?;
-    let packages = registry
-        .get("package")
-        .and_then(|p| p.as_table())
-        .ok_or("Registry is missing the '[package]' table")?;
+    let packages = get_packages_table(&registry)?;
 
     Ok(packages.contains_key(package_name))
 }
 
 pub fn list_packages(query: &Option<String>) -> Result<(), String> {
     let registry = read_registry()?;
-    let packages_table = registry
-        .get("package")
-        .and_then(|p| p.as_table())
-        .ok_or("Registry is missing the '[package]' table")?;
+    let packages_table = get_packages_table(&registry)?;
 
     let mut found = false;
     println!("{}", "Available packages:".bold());
@@ -163,10 +194,9 @@ pub fn list_packages(query: &Option<String>) -> Result<(), String> {
 
 fn get_raw_package_table(package_name: &str) -> Result<Table, String> {
     let lookup = |registry: &toml::Value| -> Option<Table> {
-        registry
-            .get("package")
-            .and_then(|v| v.as_table())
-            .and_then(|pkgs| pkgs.get(package_name))
+        get_packages_table(registry)
+            .ok()?
+            .get(package_name)
             .and_then(|v| v.as_table())
             .cloned()
     };
@@ -221,12 +251,7 @@ pub fn get_package_details(
 
 pub fn get_dependencies(package_name: &str) -> Result<Vec<String>, String> {
     let registry = read_registry()?;
-    let packages_table = registry
-        .get("package")
-        .and_then(|v| v.as_table())
-        .ok_or_else(|| {
-            "Registry is missing the '[package]' table".to_string()
-        })?;
+    let packages_table = get_packages_table(&registry)?;
 
     let package_table = packages_table
         .get(package_name)
@@ -253,12 +278,27 @@ pub fn get_dependencies(package_name: &str) -> Result<Vec<String>, String> {
     Ok(Vec::new())
 }
 
+fn is_registry_stale() -> bool {
+    let Ok(meta) = metadata_path().metadata() else {
+        return true;
+    };
+    let Ok(modified) = meta.modified() else {
+        return true;
+    };
+    let Ok(elapsed) = modified.elapsed() else {
+        return true;
+    };
+    elapsed.as_secs() > 86400
+}
+
 pub fn update_registry() -> Result<(), String> {
     update_registry_inner(false)
 }
 
 pub fn try_update_registry_silent() {
-    let _ = update_registry_inner(true);
+    if is_registry_stale() {
+        let _ = update_registry_inner(true);
+    }
 }
 
 fn update_registry_inner(silent: bool) -> Result<(), String> {
@@ -293,9 +333,9 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let local_metadata_path = registry_dir().join(METADATA_FILENAME);
-    if local_metadata_path.exists() {
-        let local_body = fs::read_to_string(&local_metadata_path)
+    let local_meta_path = metadata_path();
+    if local_meta_path.exists() {
+        let local_body = fs::read_to_string(&local_meta_path)
             .map_err(|e| format!("Failed to read local metadata: {}", e))?;
         if let Ok(local_meta) = toml::from_str::<toml::Value>(&local_body)
             && local_meta.get("version").and_then(|v| v.as_str())
@@ -339,8 +379,10 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
         }
     }
 
-    fs::write(&local_metadata_path, &remote_body)
+    fs::write(&local_meta_path, &remote_body)
         .map_err(|e| format!("Failed to write metadata: {}", e))?;
+
+    invalidate_registry_cache();
 
     println!(
         "{} version {} ({} packages).",
@@ -366,6 +408,8 @@ pub fn add_custom_package(file: &str) -> Result<(), String> {
     let dest = registry_dir().join(&filename);
     fs::copy(file, &dest)
         .map_err(|e| format!("Failed to copy package file: {}", e))?;
+
+    invalidate_registry_cache();
 
     println!(
         "{} from '{}'.",

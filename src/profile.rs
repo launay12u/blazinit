@@ -74,10 +74,7 @@ pub fn add_package_to_profile(
 ) -> Result<(), String> {
     let mut profile = read_profile(profile_name)?;
 
-    let existing_names: std::collections::HashSet<_> =
-        profile.packages.iter().map(|p| p.name.clone()).collect();
-
-    if existing_names.contains(package_name) {
+    if profile.packages.iter().any(|p| p.name == package_name) {
         return Err(format!(
             "Package '{}' is already present in profile '{}'",
             package_name, profile_name
