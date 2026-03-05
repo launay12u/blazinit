@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  setup:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION"
+
+  build:
+    name: Build — ${{ matrix.target }}
+    needs: setup
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.tag }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
+        run: cp target/${{ matrix.target }}/release/blazinit blazinit-${{ matrix.target }}
+
+      - name: Package binary (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cp target/${{ matrix.target }}/release/blazinit.exe blazinit-${{ matrix.target }}.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blazinit-${{ matrix.target }}
+          path: blazinit-${{ matrix.target }}*
+
+  release:
+    name: Create GitHub Release
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.setup.outputs.tag }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Generate release notes
+        run: git cliff --current --strip header > RELEASE_NOTES.md
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.setup.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          fail_on_unmatched_files: true
+          files: |
+            blazinit-x86_64-unknown-linux-gnu
+            blazinit-x86_64-apple-darwin
+            blazinit-aarch64-apple-darwin
+            blazinit-x86_64-pc-windows-msvc.exe

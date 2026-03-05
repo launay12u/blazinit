@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "blazinit")]
 #[command(version)]
 #[command(
@@ -12,7 +12,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     #[command(about = "Create a new profile to hold packages")]
     Create {
@@ -50,6 +50,11 @@ pub enum Commands {
             help = "Profile name to add package to. Defaults to current default profile if not specified"
         )]
         profile: Option<String>,
+        #[arg(
+            long,
+            help = "Pin a specific installer for this package (apt, brew, pacman, ...)"
+        )]
+        installer: Option<String>,
     },
 
     #[command(about = "Remove a package dependency from a profile")]
@@ -62,19 +67,15 @@ pub enum Commands {
         profile: Option<String>,
     },
 
-    #[command(about = "List available software packages")]
-    ListPackages {
-        #[arg(help = "Optional search query to filter packages")]
-        query: Option<String>,
-    },
-
     #[command(about = "Export a profile to a TOML file")]
     Export {
         #[arg(
             help = "Profile name to export. Defaults to current default profile if not specified"
         )]
         profile: Option<String>,
-        #[arg(help = "Optional file path to export to")]
+        #[arg(
+            help = "Optional file path to export to. Prints to stdout if omitted"
+        )]
         file: Option<String>,
     },
 
@@ -90,11 +91,47 @@ pub enum Commands {
             help = "Profile name to install. Defaults to current default profile if not specified"
         )]
         profile: Option<String>,
+        #[arg(
+            long,
+            help = "Force reinstall even if already detected as installed"
+        )]
+        force: bool,
+        #[arg(
+            long,
+            help = "Override installer (apt, brew, pacman, dnf, yum, winget, custom)"
+        )]
+        installer: Option<String>,
+        #[arg(
+            long,
+            help = "Print what would be run without executing anything"
+        )]
+        dry_run: bool,
     },
 
     #[command(about = "Set the default profile")]
     SetDefault {
         #[arg(help = "Name of the profile to set as default")]
         profile: String,
+    },
+
+    #[command(about = "Manage the package registry")]
+    Registry {
+        #[command(subcommand)]
+        command: RegistryCommands,
+    },
+
+    #[command(about = "Update blazinit to the latest release")]
+    SelfUpdate {
+        #[arg(long, help = "Check for a newer version without downloading it")]
+        check: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RegistryCommands {
+    #[command(about = "List available packages")]
+    List {
+        #[arg(help = "Optional search query to filter packages")]
+        query: Option<String>,
     },
 }

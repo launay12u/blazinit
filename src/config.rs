@@ -1,30 +1,51 @@
 use std::{fs, path::PathBuf};
 
+use colored::Colorize;
 use dirs_next;
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     profile::{PROFILE_DIRNAME, ensure_default_profile},
-    registry::update_registry_version_if_needed,
+    registry::ensure_registry,
 };
 
 pub static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets");
 
 const CONFIG_FILENAME: &str = "config.toml";
 const DEFAULT_PROFILE_NAME: &str = "default";
+const DEFAULT_REGISTRY_URL: &str =
+    "https://raw.githubusercontent.com/launay12u/blazinit/main/assets/registry";
 
 #[derive(Serialize, Deserialize)]
 struct Config {
     default_profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferred_installer: Option<String>,
+    #[serde(default = "default_registry_url")]
+    registry_url: String,
+}
+
+fn default_registry_url() -> String {
+    DEFAULT_REGISTRY_URL.to_string()
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             default_profile: DEFAULT_PROFILE_NAME.to_string(),
+            preferred_installer: None,
+            registry_url: DEFAULT_REGISTRY_URL.to_string(),
         }
     }
+}
+
+pub fn get_preferred_installer() -> Option<String> {
+    read_config().preferred_installer
+}
+
+pub fn get_registry_url() -> String {
+    read_config().registry_url
 }
 
 fn config_file_path() -> PathBuf {
@@ -34,9 +55,10 @@ fn config_file_path() -> PathBuf {
 fn read_config() -> Config {
     let path = config_file_path();
     if !path.exists() {
+        log::debug!("config file not found at {:?}, using defaults", path);
         return Config::default();
     }
-
+    log::debug!("reading config from {:?}", path);
     let content = fs::read_to_string(path).unwrap_or_default();
     toml::from_str(&content).unwrap_or_default()
 }
@@ -48,6 +70,10 @@ pub fn get_default_profile() -> String {
 pub fn set_default_profile(profile_name: &str) -> Result<(), String> {
     let profile_path = crate::profile::profile_path(profile_name);
     if !profile_path.exists() {
+        log::error!(
+            "set_default_profile: profile '{}' does not exist",
+            profile_name
+        );
         return Err(format!("Profile '{}' does not exist.", profile_name));
     }
 
@@ -57,7 +83,12 @@ pub fn set_default_profile(profile_name: &str) -> Result<(), String> {
     let toml_str = toml::to_string(&config).map_err(|e| e.to_string())?;
     fs::write(config_file_path(), toml_str).map_err(|e| e.to_string())?;
 
-    println!("Default profile set to '{}'.", profile_name);
+    log::info!("default profile set to '{}'", profile_name);
+    println!(
+        "{} '{}'.",
+        "Default profile set to".green(),
+        profile_name.cyan()
+    );
 
     Ok(())
 }
@@ -76,12 +107,18 @@ pub fn profiles_dir() -> PathBuf {
 
 pub fn bootstrap_config() -> Result<(), String> {
     let base = config_dir();
+    log::debug!("bootstrap: config dir = {:?}", base);
     fs::create_dir_all(&base)
         .map_err(|e| format!("Failed to create config dir: {}", e))?;
 
-    ensure_default_profile(&get_default_profile())?;
-    update_registry_version_if_needed()?;
+    let default = get_default_profile();
+    log::debug!("bootstrap: ensuring default profile '{}'", default);
+    ensure_default_profile(&default)?;
 
+    log::debug!("bootstrap: ensuring registry");
+    ensure_registry()?;
+
+    log::debug!("bootstrap: complete");
     Ok(())
 }
 

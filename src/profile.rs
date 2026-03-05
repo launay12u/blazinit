@@ -16,10 +16,17 @@ pub struct ProfilePackage {
     pub dependencies: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PackageRef {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installer: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Profile {
     pub name: String,
-    pub packages: Vec<ProfilePackage>,
+    pub packages: Vec<PackageRef>,
 }
 
 pub const PROFILE_DIRNAME: &str = "profiles";
@@ -27,12 +34,19 @@ pub const PROFILE_DIRNAME: &str = "profiles";
 pub fn ensure_default_profile(profile_name: &str) -> Result<(), String> {
     let path = profile_path(profile_name);
     if !path.exists() {
+        log::debug!(
+            "default profile '{}' not found, creating it",
+            profile_name
+        );
         let profile = Profile {
             name: profile_name.to_string(),
             packages: Vec::new(),
         };
         let toml_str = toml::to_string(&profile).map_err(|e| e.to_string())?;
         fs::write(path, toml_str).map_err(|e| e.to_string())?;
+        log::info!("created default profile '{}'", profile_name);
+    } else {
+        log::debug!("default profile '{}' already exists", profile_name);
     }
     Ok(())
 }
@@ -45,17 +59,30 @@ pub fn profile_path(profile_name: &str) -> PathBuf {
 
 pub fn read_profile(profile_name: &str) -> Result<Profile, String> {
     let path = profile_path(profile_name);
+    log::debug!("reading profile '{}' from {:?}", profile_name, path);
     if !path.exists() {
+        log::error!("profile '{}' does not exist at {:?}", profile_name, path);
         return Err(format!("Profile '{}' does not exist.", profile_name));
     }
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let profile: Profile =
         toml::from_str(&content).map_err(|e| e.to_string())?;
+    log::debug!(
+        "profile '{}' loaded ({} packages)",
+        profile_name,
+        profile.packages.len()
+    );
     Ok(profile)
 }
 
 pub fn write_profile(profile: &Profile) -> Result<(), String> {
     let path = profile_path(&profile.name);
+    log::debug!(
+        "writing profile '{}' ({} packages) to {:?}",
+        profile.name,
+        profile.packages.len(),
+        path
+    );
     let toml_str = toml::to_string(profile).map_err(|e| e.to_string())?;
     fs::write(path, toml_str).map_err(|e| e.to_string())
 }
@@ -63,65 +90,52 @@ pub fn write_profile(profile: &Profile) -> Result<(), String> {
 pub fn add_package_to_profile(
     profile_name: &str,
     package_name: &str,
+    installer: Option<String>,
 ) -> Result<(), String> {
+    log::debug!(
+        "adding package '{}' to profile '{}' (installer={:?})",
+        package_name,
+        profile_name,
+        installer
+    );
     let mut profile = read_profile(profile_name)?;
 
-    let existing_package_names: std::collections::HashSet<_> =
-        profile.packages.iter().map(|p| p.name.clone()).collect();
-
-    // Check if the main package already exists
-    if existing_package_names.contains(package_name) {
+    if profile.packages.iter().any(|p| p.name == package_name) {
+        log::warn!(
+            "package '{}' already present in profile '{}'",
+            package_name,
+            profile_name
+        );
         return Err(format!(
             "Package '{}' is already present in profile '{}'",
             package_name, profile_name
         ));
     }
 
-    let mut to_add_name_queue = vec![package_name.to_string()];
-    let mut processed_names = std::collections::HashSet::new();
-    let mut new_additions_details: Vec<ProfilePackage> = Vec::new();
-
-    while let Some(current_package_name) = to_add_name_queue.pop() {
-        if existing_package_names.contains(&current_package_name)
-            || processed_names.contains(&current_package_name)
-        {
-            continue;
-        }
-
-        let package_details = match crate::registry::get_package_details(
-            &current_package_name,
-        ) {
-            Ok(details) => details,
-            Err(e) => {
-                eprintln!(
-                    "Warning: Package '{}' (dependency) not found in registry. Skipping. Error: {}",
-                    current_package_name, e
-                );
-                continue;
-            }
-        };
-
-        new_additions_details.push(package_details.clone());
-        processed_names.insert(current_package_name.clone());
-
-        for dep_name in package_details.dependencies {
-            to_add_name_queue.push(dep_name);
-        }
+    log::debug!("checking package '{}' in registry", package_name);
+    if !crate::registry::is_package_in_registry(package_name)? {
+        log::error!("package '{}' not found in registry", package_name);
+        return Err(format!(
+            "Package '{}' not found in registry",
+            package_name
+        ));
     }
 
-    println!("Adding to profile '{}':", profile_name);
-    for item in &new_additions_details {
-        println!("- {}", item.name);
-        profile.packages.push(item.clone());
-    }
-
+    profile.packages.push(PackageRef {
+        name: package_name.to_string(),
+        installer,
+    });
     profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
-
     write_profile(&profile)?;
-    println!(
-        "Successfully added {} package(s).",
-        new_additions_details.len()
+
+    log::info!(
+        "added package '{}' to profile '{}'",
+        package_name,
+        profile_name
     );
+    println!("Adding to profile {}:", profile_name.cyan().bold());
+    println!("  {} {}", "+".green().bold(), package_name.cyan());
+    println!("{}", "Successfully added 1 package.".green());
 
     Ok(())
 }
@@ -129,25 +143,24 @@ pub fn add_package_to_profile(
 pub fn show_profile(profile_name: &str) -> Result<(), String> {
     let p = read_profile(profile_name)
         .map_err(|e| format!("Failed to read profile: {}", e))?;
-    println!("Profile: {}", p.name);
+    println!("{} {}", "Profile:".bold(), p.name.cyan().bold());
     if p.packages.is_empty() {
-        println!("  No packages in this profile.");
+        println!("  {}", "No packages in this profile.".dimmed());
     } else {
-        println!("  Packages:");
-        for pkg in p.packages {
-            let display_name = pkg.display.unwrap_or_else(|| pkg.name.clone());
-            println!("  - {}", display_name);
-            if let Some(detect) = pkg.detect {
-                println!("    Detect: {}", detect);
-            }
-            if !pkg.installers.is_empty() {
-                println!("    Installers:");
-                for (name, command) in pkg.installers {
-                    println!("      - {}: {}", name, command);
-                }
-            }
-            if !pkg.dependencies.is_empty() {
-                println!("    Dependencies: {:?}", pkg.dependencies);
+        println!("  {}", "Packages:".bold());
+        for pkg_ref in &p.packages {
+            let display = crate::registry::get_package_details(&pkg_ref.name)
+                .ok()
+                .and_then(|d| d.display)
+                .unwrap_or_else(|| pkg_ref.name.clone());
+            if let Some(installer) = &pkg_ref.installer {
+                println!(
+                    "  - {} {}",
+                    display.cyan(),
+                    format!("(installer: {})", installer).dimmed()
+                );
+            } else {
+                println!("  - {}", display.cyan());
             }
         }
     }
@@ -158,12 +171,22 @@ pub fn remove_package_from_profile(
     profile_name: &str,
     package_name: &str,
 ) -> Result<(), String> {
+    log::debug!(
+        "removing package '{}' from profile '{}'",
+        package_name,
+        profile_name
+    );
     let mut profile = read_profile(profile_name)?;
 
     let initial_len = profile.packages.len();
     profile.packages.retain(|pkg| pkg.name != package_name);
 
     if profile.packages.len() == initial_len {
+        log::warn!(
+            "package '{}' not found in profile '{}'",
+            package_name,
+            profile_name
+        );
         return Err(format!(
             "Package '{}' is not present in profile '{}'",
             package_name, profile_name
@@ -171,9 +194,16 @@ pub fn remove_package_from_profile(
     }
 
     write_profile(&profile)?;
+    log::info!(
+        "removed package '{}' from profile '{}'",
+        package_name,
+        profile_name
+    );
     println!(
-        "Successfully removed package '{}' from profile '{}'",
-        package_name, profile_name
+        "{} '{}' from profile '{}'",
+        "Successfully removed".green(),
+        package_name.cyan(),
+        profile_name.cyan()
     );
 
     Ok(())
@@ -183,24 +213,90 @@ pub fn export_profile(
     profile_name: &str,
     file: &Option<String>,
 ) -> Result<(), String> {
-    println!("Export profile {} to {:?}", profile_name, file);
+    let src = profile_path(profile_name);
+    log::debug!("exporting profile '{}' from {:?}", profile_name, src);
+    if !src.exists() {
+        log::error!("export failed: profile '{}' does not exist", profile_name);
+        return Err(format!("Profile '{}' does not exist", profile_name));
+    }
+
+    match file {
+        Some(dest) => {
+            fs::copy(&src, dest)
+                .map_err(|e| format!("Failed to export profile: {}", e))?;
+            log::info!("exported profile '{}' to '{}'", profile_name, dest);
+            println!(
+                "{} '{}' exported to '{}'",
+                "Profile".green(),
+                profile_name.cyan(),
+                dest.cyan()
+            );
+        }
+        None => {
+            log::debug!("exporting profile '{}' to stdout", profile_name);
+            let content = fs::read_to_string(&src)
+                .map_err(|e| format!("Failed to read profile: {}", e))?;
+            print!("{}", content);
+        }
+    }
+
     Ok(())
 }
 
 pub fn import_profile(file: &str) -> Result<(), String> {
-    println!("Import profile from {:?}", file);
+    log::debug!("importing profile from '{}'", file);
+    let content = fs::read_to_string(file)
+        .map_err(|e| format!("Failed to read file '{}': {}", file, e))?;
+
+    let profile: Profile = toml::from_str(&content)
+        .map_err(|e| format!("Invalid profile file: {}", e))?;
+
+    let dest = profile_path(&profile.name);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&dest)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, content.as_bytes()))
+        .map_err(|_| {
+            log::error!("import failed: profile '{}' already exists", profile.name);
+            format!(
+                "Profile '{}' already exists. Delete it first or rename the import file.",
+                profile.name
+            )
+        })?;
+
+    log::info!("imported profile '{}' from '{}'", profile.name, file);
+    println!(
+        "{} '{}'.",
+        "Profile imported successfully:".green(),
+        profile.name.cyan()
+    );
     Ok(())
 }
 
-pub fn install_profile(profile_name: &str) -> Result<(), String> {
-    println!("Install profile: {}", profile_name);
-    Ok(())
+pub fn install_profile(
+    profile_name: &str,
+    force: bool,
+    installer: &Option<String>,
+    dry_run: bool,
+) -> Result<(), String> {
+    log::info!(
+        "installing profile '{}' (force={}, dry_run={}, installer={:?})",
+        profile_name,
+        force,
+        dry_run,
+        installer
+    );
+    let profile = read_profile(profile_name)?;
+    crate::installer::run_install(&profile, force, installer, dry_run)
 }
 
 pub fn create_profile(profile_name: &str) -> Result<(), String> {
     let path = profile_path(profile_name);
+    log::debug!("creating profile '{}' at {:?}", profile_name, path);
 
     if path.exists() {
+        log::warn!("create failed: profile '{}' already exists", profile_name);
         return Err(format!("Profile '{}' already exists", profile_name));
     }
 
@@ -211,7 +307,12 @@ pub fn create_profile(profile_name: &str) -> Result<(), String> {
 
     let toml_str = toml::to_string(&profile).map_err(|e| e.to_string())?;
     fs::write(path, toml_str).map_err(|e| e.to_string())?;
-    println!("Successfully created profile '{}'.", profile_name);
+    log::info!("profile '{}' created", profile_name);
+    println!(
+        "{} '{}'.",
+        "Successfully created profile".green(),
+        profile_name.cyan()
+    );
 
     Ok(())
 }
@@ -219,6 +320,7 @@ pub fn create_profile(profile_name: &str) -> Result<(), String> {
 pub fn delete_profile(profile_name: &str) -> Result<(), String> {
     let default_profile = config::get_default_profile();
     if profile_name == default_profile {
+        log::error!("delete failed: '{}' is the default profile", profile_name);
         return Err(format!(
             "Cannot delete the default profile '{}'",
             default_profile
@@ -226,13 +328,20 @@ pub fn delete_profile(profile_name: &str) -> Result<(), String> {
     }
 
     let path = profile_path(profile_name);
+    log::debug!("deleting profile '{}' at {:?}", profile_name, path);
 
     if !path.exists() {
+        log::error!("delete failed: profile '{}' does not exist", profile_name);
         return Err(format!("Profile '{}' does not exist", profile_name));
     }
 
     fs::remove_file(path).map_err(|e| e.to_string())?;
-    println!("Successfully deleted profile '{}'.", profile_name);
+    log::info!("profile '{}' deleted", profile_name);
+    println!(
+        "{} '{}'.",
+        "Successfully deleted profile".green(),
+        profile_name.cyan()
+    );
     Ok(())
 }
 
@@ -432,12 +541,9 @@ mod tests {
 
         let profile = Profile {
             name: "write-test".to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "test-package".to_string(),
-                display: Some("Test Package".to_string()),
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
 
@@ -477,10 +583,38 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_add_package_not_in_registry() {
+        let _temp = setup_test_env();
+        let profile_name = "test-registry-validation";
+
+        let reg_dir = crate::config::config_dir().join("registry");
+        std::fs::create_dir_all(&reg_dir).unwrap();
+        std::fs::write(
+            reg_dir.join("metadata.toml"),
+            "version = \"2\"\npackages = []\n",
+        )
+        .unwrap();
+        std::fs::write(
+            reg_dir.join("existing.toml"),
+            "display = \"Existing\"\n",
+        )
+        .unwrap();
+
+        create_profile(profile_name).unwrap();
+
+        let result =
+            add_package_to_profile(profile_name, "nonexistent-pkg", None);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("not found in registry"));
+    }
+
+    #[test]
+    #[serial]
     fn test_add_package_to_profile_non_existent_profile() {
         let _temp = setup_test_env();
 
-        let result = add_package_to_profile("non-existent", "some-package");
+        let result =
+            add_package_to_profile("non-existent", "some-package", None);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("does not exist"));
     }
@@ -491,23 +625,16 @@ mod tests {
         let _temp = setup_test_env();
         let profile_name = "test-remove";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
             packages: vec![
-                ProfilePackage {
+                PackageRef {
                     name: "package1".to_string(),
-                    display: None,
-                    installers: HashMap::new(),
-                    detect: None,
-                    dependencies: vec![],
+                    installer: None,
                 },
-                ProfilePackage {
+                PackageRef {
                     name: "package2".to_string(),
-                    display: None,
-                    installers: HashMap::new(),
-                    detect: None,
-                    dependencies: vec![],
+                    installer: None,
                 },
             ],
         };
@@ -558,15 +685,11 @@ mod tests {
         let _temp = setup_test_env();
         let profile_name = "test-remove-multiple";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "brew".to_string(),
-                display: None,
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
         write_profile(&profile).unwrap();
@@ -587,21 +710,17 @@ mod tests {
         let _temp = setup_test_env();
         let profile_name = "test-add-duplicate";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "git".to_string(),
-                display: None,
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
         write_profile(&profile).unwrap();
 
         // Try to add the same package again
-        let result = add_package_to_profile(profile_name, "git");
+        let result = add_package_to_profile(profile_name, "git", None);
         assert!(result.is_err());
         let error_msg = result.err().unwrap();
         assert!(error_msg.contains("is already present in profile"));
@@ -611,25 +730,98 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_export_to_file() {
+        let _temp = setup_test_env();
+        let profile_name = "test-export";
+        create_profile(profile_name).unwrap();
+
+        let dest = _temp.path().join("exported.toml");
+        let dest_str = dest.to_str().unwrap().to_string();
+        let result = export_profile(profile_name, &Some(dest_str));
+        assert!(result.is_ok());
+        assert!(dest.exists());
+
+        let content = fs::read_to_string(&dest).unwrap();
+        assert!(content.contains(profile_name));
+    }
+
+    #[test]
+    #[serial]
+    fn test_export_non_existent_profile() {
+        let _temp = setup_test_env();
+        let result = export_profile("ghost", &None);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("does not exist"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_roundtrip() {
+        let _temp = setup_test_env();
+        let profile_name = "roundtrip-profile";
+        create_profile(profile_name).unwrap();
+
+        let dest = _temp.path().join("roundtrip.toml");
+        let dest_str = dest.to_str().unwrap().to_string();
+        export_profile(profile_name, &Some(dest_str.clone())).unwrap();
+
+        delete_profile(profile_name).unwrap_or_default();
+        // Use a different profile name so delete doesn't block (default
+        // protection) The exported file still has original name so just
+        // delete the file directly
+        if profile_path(profile_name).exists() {
+            fs::remove_file(profile_path(profile_name)).unwrap();
+        }
+
+        let result = import_profile(&dest_str);
+        assert!(result.is_ok());
+        assert!(profile_path(profile_name).exists());
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_duplicate_fails() {
+        let _temp = setup_test_env();
+        let profile_name = "dup-import";
+        create_profile(profile_name).unwrap();
+
+        let dest = _temp.path().join("dup.toml");
+        let dest_str = dest.to_str().unwrap().to_string();
+        export_profile(profile_name, &Some(dest_str.clone())).unwrap();
+
+        let result = import_profile(&dest_str);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("already exists"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_invalid_toml_fails() {
+        let _temp = setup_test_env();
+        let bad_file = _temp.path().join("bad.toml");
+        fs::write(&bad_file, "not valid toml ][[[").unwrap();
+        let result = import_profile(bad_file.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Invalid profile file"));
+    }
+
+    #[test]
+    #[serial]
     fn test_add_package_multiple_times() {
         let _temp = setup_test_env();
         let profile_name = "test-add-multiple";
 
-        // Create profile with a package
         let profile = Profile {
             name: profile_name.to_string(),
-            packages: vec![ProfilePackage {
+            packages: vec![PackageRef {
                 name: "docker".to_string(),
-                display: None,
-                installers: HashMap::new(),
-                detect: None,
-                dependencies: vec![],
+                installer: None,
             }],
         };
         write_profile(&profile).unwrap();
 
         // First attempt should fail
-        let result = add_package_to_profile(profile_name, "docker");
+        let result = add_package_to_profile(profile_name, "docker", None);
         assert!(result.is_err());
         assert!(
             result

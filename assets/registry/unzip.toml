@@ -1,0 +1,6 @@
+display = "Unzip"
+detect = "unzip --version"
+
+[packages]
+apt = "unzip"
+brew = "unzip"
