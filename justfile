@@ -53,5 +53,12 @@ bump type=default_bump:
     
     git push origin release/v$new_version
     git push --tags
-    
+
+    # Open PR to sync main (release is already triggered by the tag)
+    gh pr create \
+        --base main \
+        --head release/v$new_version \
+        --title "chore(release): v$new_version" \
+        --body "Syncs \`Cargo.toml\` and \`CHANGELOG.md\` after release \`v$new_version\`."
+
     echo "✅ Released v$new_version"
