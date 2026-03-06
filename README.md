@@ -31,14 +31,7 @@ irm https://github.com/launay12u/blazinit/releases/latest/download/blazinit-inst
 
 ### Manual download
 
-Download the binary for your platform from the [latest release](https://github.com/launay12u/blazinit/releases/latest):
-
-| Platform | Binary |
-|---|---|
-| Linux x86_64 | `blazinit-x86_64-unknown-linux-gnu` |
-| macOS Apple Silicon | `blazinit-aarch64-apple-darwin` |
-| macOS Intel | `blazinit-x86_64-apple-darwin` |
-| Windows x64 | `blazinit-x86_64-pc-windows-msvc.exe` |
+Download the binary for your platform from the [latest release](https://github.com/launay12u/blazinit/releases/latest)
 
 ### From source
 
