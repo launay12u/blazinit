@@ -8,28 +8,18 @@ env:
 
 jobs:
   setup:
-    name: Read version and tag
+    name: Read version
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version.outputs.tag }}
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Extract version from Cargo.toml
         id: version
         run: |
           VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION"
-      - name: Create and push git tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ steps.version.outputs.tag }}
-          git push origin ${{ steps.version.outputs.tag }}
 
   build:
     name: Build — ${{ matrix.target }}
@@ -50,8 +40,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.setup.outputs.tag }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -90,7 +78,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs.setup.outputs.tag }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
