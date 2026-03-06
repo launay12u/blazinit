@@ -4,6 +4,7 @@ version = "0.0.1"
 edition = "2024"
 license = "MIT"
 authors = ["Guillaume Launay"]
+repository = "https://github.com/launay12u/blazinit"
 
 [dependencies]
 clap = { version = "4.5.55", features = ["derive"] }
@@ -23,3 +24,8 @@ predicates = "3.1"
 
 [[bin]]
 name = "blazinit"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
