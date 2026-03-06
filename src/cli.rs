@@ -55,6 +55,11 @@ pub enum Commands {
             help = "Pin a specific installer for this package (apt, brew, pacman, ...)"
         )]
         installer: Option<String>,
+        #[arg(
+            long,
+            help = "Pin a specific version for this package (e.g. 2.43.0)"
+        )]
+        version: Option<String>,
     },
 
     #[command(about = "Remove a package dependency from a profile")]

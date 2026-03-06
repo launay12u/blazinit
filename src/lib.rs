@@ -47,12 +47,14 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             profile,
             package,
             installer,
+            version,
         } => {
             let profile_name = resolve_profile_name(profile);
             profile::add_package_to_profile(
                 &profile_name,
                 package,
                 installer.clone(),
+                version.clone(),
             )?;
         }
 

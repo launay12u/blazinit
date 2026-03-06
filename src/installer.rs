@@ -356,6 +356,7 @@ mod tests {
         PackageRef {
             name: name.to_string(),
             installer: None,
+            version: None,
         }
     }
 
