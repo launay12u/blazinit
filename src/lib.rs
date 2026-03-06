@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod config;
 pub mod installer;
+pub mod lockfile;
 pub mod logging;
 pub mod profile;
 pub mod registry;
