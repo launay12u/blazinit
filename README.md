@@ -20,22 +20,14 @@ Blazing fast CLI tool written in Rust for managing reproducible software install
 ### Linux & macOS
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/launay12u/blazinit/main/install.sh | sh
-```
-
-Installs to `/usr/local/bin` by default. Override with:
-
-```sh
-BLAZINIT_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/launay12u/blazinit/main/install.sh | sh
+curl -fsSL https://github.com/launay12u/blazinit/releases/latest/download/blazinit-installer.sh | sh
 ```
 
 ### Windows (PowerShell)
 
-```powershell
-irm https://raw.githubusercontent.com/launay12u/blazinit/main/install.ps1 | iex
+```sh
+irm https://github.com/launay12u/blazinit/releases/latest/download/blazinit-installer.ps1 | iex
 ```
-
-Installs to `%LOCALAPPDATA%\blazinit\bin` and adds it to your user PATH.
 
 ### Manual download
 
