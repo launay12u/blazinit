@@ -291,16 +291,18 @@ pub fn install_profile(
     force: bool,
     installer: &Option<String>,
     dry_run: bool,
+    frozen: bool,
 ) -> Result<(), String> {
     log::info!(
-        "installing profile '{}' (force={}, dry_run={}, installer={:?})",
+        "installing profile '{}' (force={}, dry_run={}, frozen={}, installer={:?})",
         profile_name,
         force,
         dry_run,
+        frozen,
         installer
     );
     let profile = read_profile(profile_name)?;
-    crate::installer::run_install(&profile, force, installer, dry_run)
+    crate::installer::run_install(&profile, force, installer, dry_run, frozen)
 }
 
 pub fn create_profile(profile_name: &str) -> Result<(), String> {
@@ -348,6 +350,13 @@ pub fn delete_profile(profile_name: &str) -> Result<(), String> {
     }
 
     fs::remove_file(path).map_err(|e| e.to_string())?;
+
+    let lock = crate::lockfile::lock_path(profile_name);
+    if lock.exists() {
+        let _ = fs::remove_file(&lock);
+        log::debug!("removed lock file for profile '{}'", profile_name);
+    }
+
     log::info!("profile '{}' deleted", profile_name);
     println!(
         "{} '{}'.",
@@ -380,6 +389,7 @@ pub fn list_profiles_to<W: std::io::Write>(
 
     for entry in entries {
         if let Ok(entry) = entry
+            && entry.path().extension().and_then(|e| e.to_str()) == Some("toml")
             && let Some(name) =
                 entry.path().file_stem().and_then(|s| s.to_str())
         {
