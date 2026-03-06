@@ -1,29 +1,49 @@
 name: Release
 
-on:
-  workflow_dispatch:
+on: workflow_dispatch
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  setup:
-    name: Read version
+  create-release:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
+      release-id: ${{ steps.create-release.outputs.result }}
+      tag: ${{ steps.get-version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Extract version from Cargo.toml
-        id: version
+        id: get-version
         run: |
           VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION"
 
+      - name: Create draft release
+        id: create-release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `${{ steps.get-version.outputs.tag }}`,
+              name: `${{ steps.get-version.outputs.tag }}`,
+              draft: true,
+              prerelease: false,
+              generate_release_notes: true
+            })
+            return data.id
+
   build:
     name: Build — ${{ matrix.target }}
-    needs: setup
+    needs: create-release
+    permissions:
+      contents: write
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -32,7 +52,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
@@ -44,7 +64,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ contains(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -62,44 +82,37 @@ jobs:
         shell: bash
         run: cp target/${{ matrix.target }}/release/blazinit.exe blazinit-${{ matrix.target }}.exe
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload release asset
+        uses: actions/github-script@v7
         with:
-          name: blazinit-${{ matrix.target }}
-          path: blazinit-${{ matrix.target }}*
+          script: |
+            const fs = require('fs')
+            const isWindows = '${{ runner.os }}' === 'Windows'
+            const assetName = isWindows
+              ? 'blazinit-${{ matrix.target }}.exe'
+              : 'blazinit-${{ matrix.target }}'
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release-id }},
+              name: assetName,
+              data: fs.readFileSync(assetName)
+            })
 
-  release:
-    name: Create GitHub Release
-    needs: [setup, build]
-    runs-on: ubuntu-latest
+  publish-release:
+    name: Publish release
+    needs: [create-release, build]
     permissions:
       contents: write
-
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Mark release as published
+        uses: actions/github-script@v7
         with:
-          fetch-depth: 0
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-
-      - name: Install git-cliff
-        uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff
-
-      - name: Generate release notes
-        run: git cliff --current --strip header > RELEASE_NOTES.md
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.setup.outputs.tag }}
-          body_path: RELEASE_NOTES.md
-          fail_on_unmatched_files: true
-          files: |
-            blazinit-x86_64-unknown-linux-gnu
-            blazinit-x86_64-apple-darwin
-            blazinit-aarch64-apple-darwin
-            blazinit-x86_64-pc-windows-msvc.exe
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release-id }},
+              draft: false
+            })
