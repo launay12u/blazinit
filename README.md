@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Latest Release](https://img.shields.io/github/v/release/launay12u/blazinit)](https://github.com/launay12u/blazinit/releases/latest)
 
-Blazing fast CLI tool written in Rust for managing reproducible software installation profiles. Create profiles once, and install all your essential tools on any machine with a single command.
+💥 Blazing fast CLI tool written in Rust for managing reproducible software installation profiles. Create profiles once, and install all your essential tools on any machine with a single command.
 
 ## Features
 
