@@ -21,6 +21,8 @@ pub struct PackageRef {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -91,12 +93,14 @@ pub fn add_package_to_profile(
     profile_name: &str,
     package_name: &str,
     installer: Option<String>,
+    version: Option<String>,
 ) -> Result<(), String> {
     log::debug!(
-        "adding package '{}' to profile '{}' (installer={:?})",
+        "adding package '{}' to profile '{}' (installer={:?}, version={:?})",
         package_name,
         profile_name,
-        installer
+        installer,
+        version
     );
     let mut profile = read_profile(profile_name)?;
 
@@ -124,6 +128,7 @@ pub fn add_package_to_profile(
     profile.packages.push(PackageRef {
         name: package_name.to_string(),
         installer,
+        version,
     });
     profile.packages.sort_by(|a, b| a.name.cmp(&b.name));
     write_profile(&profile)?;
@@ -153,14 +158,21 @@ pub fn show_profile(profile_name: &str) -> Result<(), String> {
                 .ok()
                 .and_then(|d| d.display)
                 .unwrap_or_else(|| pkg_ref.name.clone());
+            let mut annotations: Vec<String> = Vec::new();
             if let Some(installer) = &pkg_ref.installer {
+                annotations.push(format!("installer: {}", installer));
+            }
+            if let Some(version) = &pkg_ref.version {
+                annotations.push(format!("version: {}", version));
+            }
+            if annotations.is_empty() {
+                println!("  - {}", display.cyan());
+            } else {
                 println!(
                     "  - {} {}",
                     display.cyan(),
-                    format!("(installer: {})", installer).dimmed()
+                    format!("({})", annotations.join(", ")).dimmed()
                 );
-            } else {
-                println!("  - {}", display.cyan());
             }
         }
     }
@@ -279,16 +291,18 @@ pub fn install_profile(
     force: bool,
     installer: &Option<String>,
     dry_run: bool,
+    frozen: bool,
 ) -> Result<(), String> {
     log::info!(
-        "installing profile '{}' (force={}, dry_run={}, installer={:?})",
+        "installing profile '{}' (force={}, dry_run={}, frozen={}, installer={:?})",
         profile_name,
         force,
         dry_run,
+        frozen,
         installer
     );
     let profile = read_profile(profile_name)?;
-    crate::installer::run_install(&profile, force, installer, dry_run)
+    crate::installer::run_install(&profile, force, installer, dry_run, frozen)
 }
 
 pub fn create_profile(profile_name: &str) -> Result<(), String> {
@@ -336,6 +350,13 @@ pub fn delete_profile(profile_name: &str) -> Result<(), String> {
     }
 
     fs::remove_file(path).map_err(|e| e.to_string())?;
+
+    let lock = crate::lockfile::lock_path(profile_name);
+    if lock.exists() {
+        let _ = fs::remove_file(&lock);
+        log::debug!("removed lock file for profile '{}'", profile_name);
+    }
+
     log::info!("profile '{}' deleted", profile_name);
     println!(
         "{} '{}'.",
@@ -368,6 +389,7 @@ pub fn list_profiles_to<W: std::io::Write>(
 
     for entry in entries {
         if let Ok(entry) = entry
+            && entry.path().extension().and_then(|e| e.to_str()) == Some("toml")
             && let Some(name) =
                 entry.path().file_stem().and_then(|s| s.to_str())
         {
@@ -544,6 +566,7 @@ mod tests {
             packages: vec![PackageRef {
                 name: "test-package".to_string(),
                 installer: None,
+                version: None,
             }],
         };
 
@@ -603,7 +626,7 @@ mod tests {
         create_profile(profile_name).unwrap();
 
         let result =
-            add_package_to_profile(profile_name, "nonexistent-pkg", None);
+            add_package_to_profile(profile_name, "nonexistent-pkg", None, None);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("not found in registry"));
     }
@@ -614,7 +637,7 @@ mod tests {
         let _temp = setup_test_env();
 
         let result =
-            add_package_to_profile("non-existent", "some-package", None);
+            add_package_to_profile("non-existent", "some-package", None, None);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("does not exist"));
     }
@@ -631,10 +654,12 @@ mod tests {
                 PackageRef {
                     name: "package1".to_string(),
                     installer: None,
+                    version: None,
                 },
                 PackageRef {
                     name: "package2".to_string(),
                     installer: None,
+                    version: None,
                 },
             ],
         };
@@ -690,6 +715,7 @@ mod tests {
             packages: vec![PackageRef {
                 name: "brew".to_string(),
                 installer: None,
+                version: None,
             }],
         };
         write_profile(&profile).unwrap();
@@ -715,12 +741,13 @@ mod tests {
             packages: vec![PackageRef {
                 name: "git".to_string(),
                 installer: None,
+                version: None,
             }],
         };
         write_profile(&profile).unwrap();
 
         // Try to add the same package again
-        let result = add_package_to_profile(profile_name, "git", None);
+        let result = add_package_to_profile(profile_name, "git", None, None);
         assert!(result.is_err());
         let error_msg = result.err().unwrap();
         assert!(error_msg.contains("is already present in profile"));
@@ -816,12 +843,13 @@ mod tests {
             packages: vec![PackageRef {
                 name: "docker".to_string(),
                 installer: None,
+                version: None,
             }],
         };
         write_profile(&profile).unwrap();
 
         // First attempt should fail
-        let result = add_package_to_profile(profile_name, "docker", None);
+        let result = add_package_to_profile(profile_name, "docker", None, None);
         assert!(result.is_err());
         assert!(
             result

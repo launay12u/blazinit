@@ -82,7 +82,11 @@ pub fn init_logger() {
     #[cfg(debug_assertions)]
     {
         log::set_boxed_logger(Box::new(DevLogger)).unwrap_or_default();
-        log::set_max_level(LevelFilter::Debug);
+        let level = std::env::var("RUST_LOG")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(LevelFilter::Warn);
+        log::set_max_level(level);
     }
 
     #[cfg(not(debug_assertions))]
