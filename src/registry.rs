@@ -424,7 +424,6 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::{env, fs};
@@ -771,5 +770,4 @@ apt = "git"
         let registry = result.unwrap();
         assert!(registry.get("package").is_some());
     }
-
 }
