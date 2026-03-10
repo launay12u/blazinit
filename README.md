@@ -105,9 +105,6 @@ blazinit import work.toml
 # Search available packages
 blazinit registry list
 blazinit registry list docker
-
-# Add a custom package
-blazinit registry add ./my-package.toml
 ```
 
 ## Configuration

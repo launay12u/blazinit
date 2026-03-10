@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod config;
 pub mod installer;
+pub mod lockfile;
 pub mod logging;
 pub mod profile;
 pub mod registry;
@@ -47,12 +48,14 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             profile,
             package,
             installer,
+            version,
         } => {
             let profile_name = resolve_profile_name(profile);
             profile::add_package_to_profile(
                 &profile_name,
                 package,
                 installer.clone(),
+                version.clone(),
             )?;
         }
 
@@ -73,6 +76,7 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             force,
             installer,
             dry_run,
+            frozen,
         } => {
             let profile_name = resolve_profile_name(profile);
             profile::install_profile(
@@ -80,7 +84,14 @@ pub fn run(cli: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
                 *force,
                 installer,
                 *dry_run,
+                *frozen,
             )?;
+        }
+
+        cli::Commands::Lock { profile, installer } => {
+            let profile_name = resolve_profile_name(profile);
+            let p = profile::read_profile(&profile_name)?;
+            installer::generate_lock(&p, installer)?;
         }
 
         cli::Commands::Registry { command } => match command {

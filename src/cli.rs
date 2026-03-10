@@ -55,6 +55,11 @@ pub enum Commands {
             help = "Pin a specific installer for this package (apt, brew, pacman, ...)"
         )]
         installer: Option<String>,
+        #[arg(
+            long,
+            help = "Pin a specific version for this package (e.g. 2.43.0)"
+        )]
+        version: Option<String>,
     },
 
     #[command(about = "Remove a package dependency from a profile")]
@@ -106,6 +111,24 @@ pub enum Commands {
             help = "Print what would be run without executing anything"
         )]
         dry_run: bool,
+        #[arg(
+            long,
+            help = "Replay exact commands from the lock file instead of resolving"
+        )]
+        frozen: bool,
+    },
+
+    #[command(about = "Generate a lock file for a profile without installing")]
+    Lock {
+        #[arg(
+            help = "Profile name to lock. Defaults to current default profile if not specified"
+        )]
+        profile: Option<String>,
+        #[arg(
+            long,
+            help = "Override installer (apt, brew, pacman, dnf, yum, winget, custom)"
+        )]
+        installer: Option<String>,
     },
 
     #[command(about = "Set the default profile")]
