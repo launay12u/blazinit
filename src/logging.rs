@@ -17,8 +17,10 @@ fn timestamp_secs() -> u64 {
 
 // --- Dev logger: colored stderr -------------------------------------------
 
+#[cfg(debug_assertions)]
 struct DevLogger;
 
+#[cfg(debug_assertions)]
 impl Log for DevLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= Level::Debug

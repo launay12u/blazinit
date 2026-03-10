@@ -424,33 +424,6 @@ fn update_registry_inner(silent: bool) -> Result<(), String> {
     Ok(())
 }
 
-pub fn add_custom_package(file: &str) -> Result<(), String> {
-    log::debug!("adding custom package from '{}'", file);
-    let content = fs::read_to_string(file)
-        .map_err(|e| format!("Failed to read file '{}': {}", file, e))?;
-
-    toml::from_str::<toml::Value>(&content)
-        .map_err(|e| format!("Invalid package file: {}", e))?;
-
-    let filename = PathBuf::from(file)
-        .file_name()
-        .ok_or("Invalid file path")?
-        .to_os_string();
-
-    let dest = registry_dir().join(&filename);
-    fs::copy(file, &dest)
-        .map_err(|e| format!("Failed to copy package file: {}", e))?;
-
-    invalidate_registry_cache();
-
-    log::info!("custom package added from '{}' -> {:?}", file, dest);
-    println!(
-        "{} from '{}'.",
-        "Package added to registry".green(),
-        file.cyan()
-    );
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -799,42 +772,4 @@ apt = "git"
         assert!(registry.get("package").is_some());
     }
 
-    #[test]
-    #[serial]
-    fn test_add_custom_package_valid() {
-        let _temp = setup_test_env();
-        create_dummy_registry(&_temp, &[]);
-
-        let pkg_file = _temp.path().join("mypkg.toml");
-        fs::write(&pkg_file, "display = \"My Package\"\n").unwrap();
-
-        let result = add_custom_package(pkg_file.to_str().unwrap());
-        assert!(result.is_ok());
-        assert!(registry_dir().join("mypkg.toml").exists());
-    }
-
-    #[test]
-    #[serial]
-    fn test_add_custom_package_invalid_toml() {
-        let _temp = setup_test_env();
-        create_dummy_registry(&_temp, &[]);
-
-        let pkg_file = _temp.path().join("bad.toml");
-        fs::write(&pkg_file, "not valid ][[[").unwrap();
-
-        let result = add_custom_package(pkg_file.to_str().unwrap());
-        assert!(result.is_err());
-        assert!(result.err().unwrap().contains("Invalid package file"));
-    }
-
-    #[test]
-    #[serial]
-    fn test_add_custom_package_missing_file() {
-        let _temp = setup_test_env();
-        create_dummy_registry(&_temp, &[]);
-
-        let result = add_custom_package("/nonexistent/path/pkg.toml");
-        assert!(result.is_err());
-        assert!(result.err().unwrap().contains("Failed to read file"));
-    }
 }
